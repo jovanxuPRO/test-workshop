@@ -1149,8 +1149,19 @@ async def save_plan_to_tc(request: Request):
 
 @app.get("/api/ai-key-status")
 def ai_key_status():
-    """Return whether AI key is configured (never reveal the actual key)."""
-    return {"configured": bool(_ai_key), "source": "env" if os.environ.get("TW_AI_KEY") else ("ui" if _ai_key else "none")}
+    """Return whether AI key is configured and its format validity."""
+    configured = bool(_ai_key)
+    valid = False
+    hint = ""
+    if configured:
+        k = _ai_key
+        valid = len(k) >= 8
+        if not k.startswith(("sk-", "ak-", "fk-")) and "deepseek" not in k.lower():
+            hint = "格式可能不正确（通常以 sk-/ak-/fk- 开头）"
+        elif len(k) < 20:
+            hint = "Key 太短，可能不完整"
+    return {"configured": configured, "valid": valid or len(_ai_key) >= 20, "hint": hint,
+            "source": "env" if os.environ.get("TW_AI_KEY") else ("ui" if _ai_key else "none")}
 
 
 @app.post("/api/ai-key")

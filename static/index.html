@@ -781,8 +781,12 @@ function loadAIProfiles() {
     else selectAIProfile(_aiProfiles[0].id);
     // Check key status
     fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
-        document.getElementById('ai-status').textContent = d.configured ? '(已配置)' : '';
-        document.getElementById('ai-status').style.color = d.configured ? '#27ae60' : '#888';
+        document.getElementById('ai-status').textContent = d.configured ? (d.valid ? '(已配置)' : '⚠') : '';
+        document.getElementById('ai-status').style.color = d.configured ? (d.valid ? '#27ae60' : '#ff9800') : '#888';
+        var ks = document.getElementById('ai-key-status');
+        if (d.configured && !d.valid) {
+            ks.style.display='block'; ks.innerHTML='<span style="color:#ff9800">⚠ ' + (d.hint||'Key 可能不完整') + '</span>';
+        }
     }).catch(()=>{});
 }
 function saveAIProfiles() { localStorage.setItem('ai_profiles',JSON.stringify(_aiProfiles)); localStorage.setItem('ai_active',_aiActiveId); }
@@ -825,8 +829,11 @@ function selectAIProfile(id) {
     document.getElementById('ai-saved-msg').style.display='none';
     fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
         const ks=document.getElementById('ai-key-status');
-        ks.style.display=d.configured?'block':'none';
-        ks.innerHTML='<span style="color:#27ae60">密钥已配置（服务器加密存储，重新输入将覆盖）</span>';
+        ks.style.display='block';
+        if (d.configured) {
+            if (d.valid) ks.innerHTML='<span style="color:#27ae60">✅ 密钥完整</span>';
+            else ks.innerHTML='<span style="color:#ff9800">⚠ '+(d.hint||'不完整')+'</span>';
+        } else { ks.innerHTML='<span style="color:#888">未配置密钥</span>'; }
     }).catch(()=>{});
     renderAIList();
 }
@@ -872,8 +879,14 @@ async function saveAIConfig(){
     saveAIProfiles();
     msg.style.display='block';
     msg.innerHTML='<span style="color:#27ae60">已保存，当前使用: '+p.name+' ('+p.provider+')</span>';
-    document.getElementById('ai-status').textContent='(已配置)';
-    document.getElementById('ai-status').style.color='#27ae60';
+    fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
+        document.getElementById('ai-status').textContent = d.configured ? (d.valid ? '(已配置)' : '⚠') : '';
+        document.getElementById('ai-status').style.color = d.configured ? (d.valid ? '#27ae60' : '#ff9800') : '#888';
+        var ks = document.getElementById('ai-key-status');
+        if (d.configured && !d.valid) {
+            ks.style.display='block'; ks.innerHTML='<span style="color:#ff9800">⚠ '+(d.hint||'Key 可能不完整')+'</span>';
+        }
+    }).catch(()=>{});
 }
 
 loadAIProfiles();
