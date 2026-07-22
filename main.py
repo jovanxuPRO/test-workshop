@@ -52,11 +52,53 @@ TCF = os.path.join(BASE, "test_cases.json")
 # Concurrency guard: max 3 simultaneous test executions
 _exec_sem = asyncio.Semaphore(3)
 
-# AI API Key — in-memory only, never persisted to disk/DB/localStorage/logs
+# AI API Key — encrypted at rest, decrypted in memory only
 # Set via env TW_AI_KEY=sk-xxx or via UI (POST /api/ai-key)
-_ai_key = os.environ.get("TW_AI_KEY", "").strip()
+_AI_ENC_FILE = os.path.join(BASE, ".ai_key.enc")
+import hashlib as _hashlib, secrets as _secrets
+
+_fernet_secret = base64.urlsafe_b64encode(
+    _hashlib.sha256((os.environ.get("TW_SECRET", BASE)).encode()).digest()
+)[:32]
+
+
+def _encrypt_key(plain: str) -> bytes:
+    from base64 import urlsafe_b64encode as b64e
+    key_bytes = _fernet_secret
+    salt = _secrets.token_bytes(16)
+    data = plain.encode()
+    # XOR cipher with key stream derived from HMAC
+    import hmac
+    stream = hmac.new(key_bytes, salt, _hashlib.sha256).digest() * ((len(data) // 32) + 1)
+    encrypted = bytes(a ^ b for a, b in zip(data, stream[:len(data)]))
+    return b64e(salt + encrypted)
+
+
+def _decrypt_key(data: bytes) -> str:
+    from base64 import urlsafe_b64decode as b64d
+    raw = b64d(data)
+    salt, encrypted = raw[:16], raw[16:]
+    import hmac
+    stream = hmac.new(_fernet_secret, salt, _hashlib.sha256).digest() * ((len(encrypted) // 32) + 1)
+    return bytes(a ^ b for a, b in zip(encrypted, stream[:len(encrypted)])).decode()
+
+
+# Try to load from encrypted file first, then env var
+_ai_key = ""
+if os.path.exists(_AI_ENC_FILE):
+    try:
+        with open(_AI_ENC_FILE, "rb") as f:
+            _ai_key = _decrypt_key(f.read())
+        logger.info("AI key loaded from encrypted storage")
+    except Exception:
+        logger.warning("Failed to decrypt AI key file, trying env var")
+
+if not _ai_key:
+    _ai_key = os.environ.get("TW_AI_KEY", "").strip()
+    if _ai_key:
+        logger.info("AI key loaded from TW_AI_KEY env var")
+
 _DEBUG = os.environ.get("TW_DEBUG", "").lower() in ("1", "true", "yes")
-logger.info(f"AI key {'configured' if _ai_key else 'not set — use TW_AI_KEY env or UI'}")
 # Simple rate limiter: max requests per endpoint per window
 _rate_limits = {}  # key -> [(timestamp, count), ...]
 
@@ -1090,16 +1132,28 @@ def ai_key_status():
 
 @app.post("/api/ai-key")
 async def set_ai_key(request: Request):
-    """Set AI API key. Stored in memory only, never logged or persisted."""
+    """Set AI API key. Encrypted at rest, decrypted to memory only."""
     global _ai_key
     body = await request.json()
     key = str(body.get("key", "")).strip()
     if not key:
-        return {"ok": False, "error": "Key is empty"}
+        # Clear key
+        _ai_key = ""
+        try: os.remove(_AI_ENC_FILE)
+        except OSError: pass
+        logger.info("AI key cleared")
+        return {"ok": True, "masked": ""}
     if len(key) < 8:
         return {"ok": False, "error": "Key too short"}
     _ai_key = key
-    logger.info("AI key updated via UI (length=%d, source=user)", len(key))
+    try:
+        with open(_AI_ENC_FILE, "wb") as f:
+            f.write(_encrypt_key(key))
+        os.chmod(_AI_ENC_FILE, 0o600)
+        logger.info("AI key encrypted and persisted (length=%d)", len(key))
+    except Exception as e:
+        logger.error(f"Failed to encrypt AI key: {e}")
+        return {"ok": False, "error": "Encryption failed"}
     return {"ok": True, "masked": key[:6] + "****" if len(key) > 6 else "****"}
 
 
