@@ -1253,7 +1253,7 @@ async def ai_suggest(request: Request):
         return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": msg}
     except Exception as e:
         logger.error(f"ai-suggest crashed: {e}", exc_info=True)
-        return {"suggestions": []}
+        return {"suggestions": [], "source": "error", "ai_error": str(e)[:200]}
 
 
 async def _call_llm(apis, seed, model, base_url):
