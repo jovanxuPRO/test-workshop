@@ -1061,4 +1061,13 @@ if __name__ == "__main__":
     import uvicorn
     host = os.environ.get("TW_HOST", "127.0.0.1")
     port = int(os.environ.get("TW_PORT", "9000"))
-    uvicorn.run(app, host=host, port=port)
+    cert = os.environ.get("TW_CERT_FILE", "")
+    key = os.environ.get("TW_KEY_FILE", "")
+    kwargs = {"host": host, "port": port}
+    if cert and key and os.path.exists(cert) and os.path.exists(key):
+        kwargs["ssl_certfile"] = cert
+        kwargs["ssl_keyfile"] = key
+        logger.info(f"HTTPS enabled: {host}:{port}")
+    else:
+        logger.info(f"HTTP mode: {host}:{port}")
+    uvicorn.run(app, **kwargs)

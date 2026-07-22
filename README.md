@@ -88,11 +88,23 @@ test-workshop/
 
 ```bash
 # 环境变量
-export TW_HEADLESS=true    # Playwright 无头模式 (默认 true)
+export TW_HOST=0.0.0.0          # 监听地址 (默认 127.0.0.1)
+export TW_PORT=9000             # 端口 (默认 9000)
+export TW_HEADLESS=true         # Playwright 无头模式
+export TW_CERT_FILE=/path/cert.pem   # HTTPS 证书 (可选)
+export TW_KEY_FILE=/path/key.pem     # HTTPS 私钥 (可选)
 
-# 绑定内网
+# HTTP 模式（默认）
 python main.py
-# 默认 0.0.0.0:9000，生产建议前置 nginx + TLS
+
+# HTTPS 模式
+export TW_CERT_FILE=./cert.pem TW_KEY_FILE=./key.pem
+python main.py
+```
+
+自签证书快速生成：
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
 ```
 
 ## 审计历史
