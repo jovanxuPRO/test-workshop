@@ -1292,33 +1292,36 @@ API:
                   "temperature":0.8+random.random()*0.2,"max_tokens":8000})
         if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
         text = r.json()["choices"][0]["message"]["content"].strip()
-        logger.info(f"AI raw response ({len(text)} chars): {text[:200]}...")
-        # Extract JSON from ```json blocks or raw array
+        logger.info(f"AI raw ({len(text)} chars): {repr(text[:300])}")
+        # Extract JSON from response
         if "```json" in text:
-            text = text.split("```json")[1].split("```")[0].strip()
+            parts = text.split("```json", 1)[1].split("```", 1)
+            text = parts[0].strip()
         elif "```" in text:
-            text = text.split("```")[1].strip()
-        # Find the JSON array
-        import json as _j
+            parts = text.split("```", 2)
+            text = parts[1].strip() if len(parts) >= 2 else text
+        # Find JSON array boundaries
         start = text.find("[")
         end = text.rfind("]")
         if start >= 0 and end > start:
             text = text[start:end+1]
-        # Try parsing with multiple fallbacks
-        for attempt in range(3):
-            try:
-                return _j.loads(text)
-            except _j.JSONDecodeError as je:
-                if attempt == 0:
-                    # Fix common AI JSON errors: trailing commas, unescaped quotes
-                    import re
-                    text = re.sub(r',\s*]', ']', text)  # trailing comma before ]
-                    text = re.sub(r',\s*}', '}', text)  # trailing comma before }
-                elif attempt == 1:
-                    # Try to fix unescaped newlines in strings
-                    text = text.replace('\n', '\\n')
-                else:
-                    raise Exception(f"JSON error at line {je.lineno}: {je.msg}")
+        elif start < 0:
+            # No array — try to create one from loose objects
+            text = "[" + text + "]"
+        import json as _j, re
+        # Progressive fixes
+        try:
+            return _j.loads(text)
+        except _j.JSONDecodeError as je:
+            # Fix 1: trailing commas
+            text = re.sub(r',\s*([}\]])', r'\1', text)
+            try: return _j.loads(text)
+            except _j.JSONDecodeError:
+                # Fix 2: unescaped control chars in strings
+                text = re.sub(r'(?<=[^\\])\\(?!["\\/bfnrtu])', r'\\\\', text)
+                try: return _j.loads(text)
+                except _j.JSONDecodeError as je2:
+                    raise Exception(f"JSON parse fail L{je2.lineno}: {je2.msg} [{text[max(0,je2.pos-20):je2.pos+20]}]")
 
 
 def _pattern_suggest(apis, seed):
