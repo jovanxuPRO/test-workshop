@@ -224,48 +224,49 @@ def gen_code(plan):
     with open(os.path.join(out, "conftest.py"), "w", encoding="utf-8") as f:
         f.write(cf)
 
-    # unit tests - no try/except masking failures
-    ut = 'import pytest, httpx, time\n'
-    ut += f'B = "{url}"\n'
-    ut += 'class TestUnit:\n'
-    ut += '    def test_1_reachable(self):\n'
-    ut += '        """服务可达性"""\n'
-    ut += '        r = httpx.get(B, timeout=15, follow_redirects=True)\n'
-    ut += '        assert r.status_code < 500\n\n'
-    ut += '    def test_2_response_time(self):\n'
-    ut += '        """响应时间基准"""\n'
-    ut += '        t0=time.time(); httpx.get(B,timeout=20,follow_redirects=True)\n'
-    ut += '        assert time.time()-t0<10\n\n'
-    ut += '    def test_3_ssl_valid(self):\n'
-    ut += '        """SSL证书有效"""\n'
-    ut += '        if not B.startswith("https"): pytest.skip("HTTP only")\n'
-    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
-    ut += '        assert r.status_code<500\n\n'
-    ut += '    def test_4_redirect_follow(self):\n'
-    ut += '        """重定向跟踪"""\n'
-    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
-    ut += '        assert r.status_code < 500\n\n'
-    ut += '    def test_5_headers_present(self):\n'
-    ut += '        """响应头完整"""\n'
-    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
-    ut += '        assert isinstance(r.headers, dict) or hasattr(r.headers, "__getitem__")\n\n'
-    ut += '    def test_6_content_length(self):\n'
-    ut += '        """响应体大小"""\n'
-    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
-    ut += '        assert len(r.content)>0 or r.status_code>=300\n\n'
-    ut += '    def test_7_encoding_valid(self):\n'
-    ut += '        """编码声明检查"""\n'
-    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
-    ut += '        assert isinstance(r.encoding, str) or r.status_code>=300\n\n'
-    ut += '    def test_8_concurrent(self):\n'
-    ut += '        """并发请求"""\n'
-    ut += '        import concurrent.futures\n'
-    ut += '        def req(): return httpx.get(B,timeout=20,follow_redirects=True).status_code\n'
-    ut += '        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:\n'
-    ut += '            results = list(ex.map(lambda _: req(), range(3)))\n'
-    ut += '        assert all(s<500 for s in results)\n\n'
-    with open(os.path.join(out, "test_unit.py"), "w", encoding="utf-8") as f:
-        f.write(ut)
+    # unit tests — only if api/unit type requested
+    if "api" in types or "unit" in types:
+        ut = 'import pytest, httpx, time\n'
+        ut += f'B = "{url}"\n'
+        ut += 'class TestUnit:\n'
+        ut += '    def test_1_reachable(self):\n'
+        ut += '        """服务可达性"""\n'
+        ut += '        r = httpx.get(B, timeout=15, follow_redirects=True)\n'
+        ut += '        assert r.status_code < 500\n\n'
+        ut += '    def test_2_response_time(self):\n'
+        ut += '        """响应时间基准"""\n'
+        ut += '        t0=time.time(); httpx.get(B,timeout=20,follow_redirects=True)\n'
+        ut += '        assert time.time()-t0<10\n\n'
+        ut += '    def test_3_ssl_valid(self):\n'
+        ut += '        """SSL证书有效"""\n'
+        ut += '        if not B.startswith("https"): pytest.skip("HTTP only")\n'
+        ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+        ut += '        assert r.status_code<500\n\n'
+        ut += '    def test_4_redirect_follow(self):\n'
+        ut += '        """重定向跟踪"""\n'
+        ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+        ut += '        assert r.status_code < 500\n\n'
+        ut += '    def test_5_headers_present(self):\n'
+        ut += '        """响应头完整"""\n'
+        ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+        ut += '        assert isinstance(r.headers, dict) or hasattr(r.headers, "__getitem__")\n\n'
+        ut += '    def test_6_content_length(self):\n'
+        ut += '        """响应体大小"""\n'
+        ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+        ut += '        assert len(r.content)>0 or r.status_code>=300\n\n'
+        ut += '    def test_7_encoding_valid(self):\n'
+        ut += '        """编码声明检查"""\n'
+        ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+        ut += '        assert isinstance(r.encoding, str) or r.status_code>=300\n\n'
+        ut += '    def test_8_concurrent(self):\n'
+        ut += '        """并发请求"""\n'
+        ut += '        import concurrent.futures\n'
+        ut += '        def req(): return httpx.get(B,timeout=20,follow_redirects=True).status_code\n'
+        ut += '        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:\n'
+        ut += '            results = list(ex.map(lambda _: req(), range(3)))\n'
+        ut += '        assert all(s<500 for s in results)\n\n'
+        with open(os.path.join(out, "test_unit.py"), "w", encoding="utf-8") as f:
+            f.write(ut)
 
     # api tests
     if "api" in types and apis:
@@ -315,7 +316,8 @@ def gen_code(plan):
                     ("headers", f'c.head("{tp}")', "len(r.headers) > 0"),
                 ]
             else:
-                tests = []
+                # OPTIONS or unknown methods — basic reachability test
+                tests = [("ok", f'c.request("{m}","{tp}")', "r.status_code < 500")]
             for tn, stmt, check in tests:
                 lines.append(f"    def test_{tn}(self, c):")
                 lines.append(f'        """{tn}: {m} {p}"""')
