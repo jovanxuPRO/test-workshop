@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 136,
+    "passed": 132,
+    "failed": 4,
+    "errors": 0,
+    "rate": 97.1,
+    "time": "2026-07-22 21:26:19"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 134,
+    "passed": 134,
+    "failed": 0,
+    "errors": 0,
+    "rate": 100.0,
+    "time": "2026-07-22 21:19:28"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 134,
+    "passed": 134,
+    "failed": 0,
+    "errors": 0,
+    "rate": 100.0,
+    "time": "2026-07-22 21:14:05"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 134,
+    "passed": 134,
+    "failed": 0,
+    "errors": 0,
+    "rate": 100.0,
+    "time": "2026-07-22 21:09:41"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 135,
+    "passed": 133,
+    "failed": 2,
+    "errors": 0,
+    "rate": 98.5,
+    "time": "2026-07-22 21:04:48"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 108,
+    "passed": 108,
+    "failed": 0,
+    "errors": 0,
+    "rate": 100.0,
+    "time": "2026-07-22 21:00:31"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 108,
+    "passed": 108,
+    "failed": 0,
+    "errors": 0,
+    "rate": 100.0,
+    "time": "2026-07-22 20:57:32"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 108,
+    "passed": 108,
+    "failed": 0,
+    "errors": 0,
+    "rate": 100.0,
+    "time": "2026-07-22 20:55:19"
+  }
+]

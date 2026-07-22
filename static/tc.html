@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用例管理中心</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',-apple-system,sans-serif;background:#f5f6fa;color:#333}
+.top{background:#5c6bc0;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.top h1{font-size:18px}.top a{color:#c4c9f7;text-decoration:none;font-size:13px}
+.toolbar{display:flex;gap:10px;padding:16px 24px;background:#fff;align-items:center;border-bottom:1px solid #e8ecf1;flex-wrap:wrap}
+.toolbar input,.toolbar select{padding:8px 12px;border:2px solid #e8ecf1;border-radius:6px;font-size:13px}
+.toolbar input{width:200px}.toolbar select{width:120px}
+.btn{padding:8px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:#5c6bc0;color:#fff}.btn-primary:hover{opacity:.9}
+.btn-success{background:#26a69a;color:#fff}.btn-success:hover{opacity:.9}
+.btn-danger{background:#fce4ec;color:#ef5350}.btn-danger:hover{background:#ef5350;color:#fff}
+.btn-sm{padding:4px 10px;font-size:11px}
+.tc-count{font-size:12px;color:#8898aa;margin-left:auto}
+.container{padding:16px 24px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04)}
+th{background:#f8f9fb;padding:10px;text-align:left;font-size:11px;color:#888;text-transform:uppercase;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #eee;font-size:12px;vertical-align:top}
+tr:hover td{background:#fafbff}
+.badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700}
+.badge-p0{background:#fce4ec;color:#ef5350}.badge-p1{background:#fff3e0;color:#e65100}.badge-p2{background:#e8eaf6;color:#5c6bc0}
+.badge-pending{background:#fef3cd;color:#856404}.badge-pass{background:#d4edda;color:#155724}.badge-fail{background:#f8d7da;color:#721c24}
+.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal-box{background:#fff;border-radius:12px;padding:28px;width:90%;max-width:560px;max-height:90vh;overflow-y:auto}
+.modal-box h2{font-size:17px;color:#2c3e50;margin-bottom:16px}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:8px 12px;border:2px solid #e8ecf1;border-radius:6px;font-size:13px;font-family:inherit}
+.form-group textarea{min-height:60px;resize:vertical}
+.form-row{display:flex;gap:10px}.form-row .form-group{flex:1}
+.btn-row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="top">
+    <h1>用例管理中心</h1>
+    <a href="/">返回测试工坊</a>
+</div>
+<div class="toolbar">
+    <input id="filter" placeholder="搜索用例..." oninput="render()">
+    <select id="f-priority" onchange="render()"><option value="">全部优先级</option><option>P0</option><option>P1</option><option>P2</option></select>
+    <select id="f-status" onchange="render()"><option value="">全部状态</option><option>待执行</option><option>通过</option><option>失败</option></select>
+    <select id="f-module" onchange="render()"><option value="">全部模块</option></select>
+    <button class="btn btn-primary" onclick="openAdd()">+ 新增用例</button>
+    <span class="tc-count" id="count">0 个用例</span>
+</div>
+<div class="container">
+    <table>
+        <thead><tr><th>ID</th><th>模块</th><th>标题</th><th>优先级</th><th>方法</th><th>路径</th><th>预期结果</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody id="tbody"></tbody>
+    </table>
+</div>
+
+<div class="modal" id="modal" style="display:none">
+    <div class="modal-box">
+        <h2 id="modal-title">新增用例</h2>
+        <input type="hidden" id="tc-id">
+        <div class="form-row">
+            <div class="form-group"><label>模块</label><input id="tc-module" placeholder="用户管理"></div>
+            <div class="form-group"><label>优先级</label><select id="tc-priority"><option>P0</option><option selected>P1</option><option>P2</option></select></div>
+        </div>
+        <div class="form-group"><label>标题</label><input id="tc-title" placeholder="登录成功验证"></div>
+        <div class="form-row">
+            <div class="form-group"><label>方法</label><select id="tc-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select></div>
+            <div class="form-group"><label>路径</label><input id="tc-path" placeholder="/api/users"></div>
+        </div>
+        <div class="form-group"><label>前置条件</label><input id="tc-pre" placeholder="被测服务已启动"></div>
+        <div class="form-group"><label>测试步骤</label><textarea id="tc-steps" placeholder="1.发送GET请求&#10;2.检查状态码&#10;3.验证响应体"></textarea></div>
+        <div class="form-group"><label>测试数据</label><input id="tc-data" placeholder="无"></div>
+        <div class="form-group"><label>预期结果</label><input id="tc-expected" placeholder="HTTP 200, 返回用户列表"></div>
+        <div class="form-group"><label>状态</label><select id="tc-status"><option>待执行</option><option>通过</option><option>失败</option></select></div>
+        <div class="btn-row">
+            <button class="btn" style="background:#e8eaf6;color:#5c6bc0" onclick="closeModal()">取消</button>
+            <button class="btn btn-success" onclick="saveTC()">保存</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let cases = [];
+
+async function load() {
+    const r = await fetch('/api/tc');
+    cases = (await r.json()).cases;
+    render();
+}
+
+function render() {
+    const q = (document.getElementById('filter').value||'').toLowerCase();
+    const fp = document.getElementById('f-priority').value;
+    const fs = document.getElementById('f-status').value;
+    const fm = document.getElementById('f-module').value;
+
+    let filtered = cases.filter(c => {
+        if (q && !(c.module+c.title+c.expected+c.path).toLowerCase().includes(q)) return false;
+        if (fp && c.priority !== fp) return false;
+        if (fs && c.status !== fs) return false;
+        if (fm && c.module !== fm) return false;
+        return true;
+    });
+
+    // Update module filter
+    const mods = [...new Set(cases.map(c => c.module).filter(Boolean))];
+    const sel = document.getElementById('f-module');
+    sel.innerHTML = '<option value="">全部模块</option>' + mods.map(m => `<option>${m}</option>`).join('');
+
+    document.getElementById('count').textContent = filtered.length + ' / ' + cases.length + ' 个用例';
+    document.getElementById('tbody').innerHTML = filtered.map(c => `
+        <tr>
+            <td style="font-family:monospace;font-size:11px">${c.id}</td>
+            <td>${c.module}</td>
+            <td><strong>${c.title}</strong></td>
+            <td><span class="badge badge-${c.priority.toLowerCase()}">${c.priority}</span></td>
+            <td style="font-family:monospace;font-size:11px">${c.method||''}</td>
+            <td style="font-family:monospace;font-size:11px">${c.path||''}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.expected}</td>
+            <td><span class="badge badge-${c.status==='通过'?'pass':c.status==='失败'?'fail':'pending'}">${c.status}</span></td>
+            <td style="white-space:nowrap">
+                <button class="btn btn-sm btn-primary" onclick="openEdit('${c.id}')">编辑</button>
+                <button class="btn btn-sm btn-danger" onclick="delTC('${c.id}')">删除</button>
+            </td>
+        </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;padding:40px;color:#888">暂无用例，点击「+ 新增用例」添加</td></tr>';
+}
+
+function openAdd() {
+    document.getElementById('modal-title').textContent = '新增用例';
+    document.getElementById('tc-id').value = '';
+    ['tc-module','tc-title','tc-pre','tc-steps','tc-data','tc-expected','tc-path'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('tc-priority').value = 'P1';
+    document.getElementById('tc-method').value = 'GET';
+    document.getElementById('tc-status').value = '待执行';
+    document.getElementById('modal').style.display = 'flex';
+}
+
+function openEdit(id) {
+    const c = cases.find(tc => tc.id === id);
+    if (!c) return;
+    document.getElementById('modal-title').textContent = '编辑用例 ' + id;
+    document.getElementById('tc-id').value = id;
+    document.getElementById('tc-module').value = c.module||'';
+    document.getElementById('tc-title').value = c.title||'';
+    document.getElementById('tc-priority').value = c.priority||'P1';
+    document.getElementById('tc-method').value = c.method||'GET';
+    document.getElementById('tc-path').value = c.path||'';
+    document.getElementById('tc-pre').value = c.precondition||'';
+    document.getElementById('tc-steps').value = c.steps||'';
+    document.getElementById('tc-data').value = c.testdata||'';
+    document.getElementById('tc-expected').value = c.expected||'';
+    document.getElementById('tc-status').value = c.status||'待执行';
+    document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+async function saveTC() {
+    const id = document.getElementById('tc-id').value;
+    const body = {
+        module: document.getElementById('tc-module').value,
+        title: document.getElementById('tc-title').value,
+        priority: document.getElementById('tc-priority').value,
+        method: document.getElementById('tc-method').value,
+        path: document.getElementById('tc-path').value,
+        precondition: document.getElementById('tc-pre').value,
+        steps: document.getElementById('tc-steps').value,
+        testdata: document.getElementById('tc-data').value,
+        expected: document.getElementById('tc-expected').value,
+        status: document.getElementById('tc-status').value,
+    };
+    const url = id ? '/api/tc/' + id : '/api/tc';
+    const method = id ? 'PUT' : 'POST';
+    await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    closeModal();
+    await load();
+}
+
+async function delTC(id) {
+    if (!confirm('删除用例 ' + id + '?')) return;
+    await fetch('/api/tc/' + id, { method: 'DELETE' });
+    await load();
+}
+
+load();
+</script>
+</body>
+</html>
