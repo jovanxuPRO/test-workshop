@@ -1428,8 +1428,10 @@ def save_auto_tcs(plan):
         })
         added += 1
     if added:
+        if len(existing) > 1000:
+            existing = existing[-500:]  # Keep last 500 entries
         save_tc(existing)
-        logger.info(f"Saved {added} auto-generated TCs from '{name}'")
+        logger.info(f"Saved {added} auto-generated TCs from '{name}' (total: {len(existing)})")
 
 
 def update_tc_status(plan, xml_path):
