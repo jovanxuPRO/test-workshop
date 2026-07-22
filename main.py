@@ -1284,7 +1284,7 @@ API:
 - 性能并发(1-2): 响应时间、并发请求
 
 每条JSON包含: title, priority(P0/P1/P2), expected, precondition, steps, method, path
-用```json包裹，总量不限，生成越多越好。"""
+用```json包裹输出，不要加注释，总量不限。"""
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
@@ -1309,6 +1309,9 @@ API:
             # No array — try to create one from loose objects
             text = "[" + text + "]"
         import json as _j, re
+        # Strip JSON-invalid comments (AI often adds // comments)
+        text = re.sub(r'//[^\n]*', '', text)  # Remove // single-line comments
+        text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)  # Remove /* block comments */
         # Progressive fixes
         try:
             return _j.loads(text)
