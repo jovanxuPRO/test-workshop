@@ -336,8 +336,14 @@ function restore() {
     try {
         const d = JSON.parse(localStorage.getItem("wiz")); if (!d) return;
         document.getElementById("p-name").value = d.name||""; document.getElementById("p-url").value = d.url||""; document.getElementById("p-rules").value = d.rules||"";
-        document.getElementById("api-list").innerHTML = ""; (d.apis||[]).forEach(a => { addApi(); const rows = document.querySelectorAll("#api-list tr"); const l = rows[rows.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
-        document.getElementById("pg-list").innerHTML = ""; (d.pgs||[]).forEach(p => { addPg(); const rows = document.querySelectorAll("#pg-list tr"); const l = rows[rows.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; if(p.br) l.querySelector(".pg-br").value = p.br; });
+        if (d.apis && d.apis.length) {
+            document.getElementById("api-list").innerHTML = "";
+            d.apis.forEach(a => { addApi(); const rows = document.querySelectorAll("#api-list tr"); const l = rows[rows.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
+        }
+        if (d.pgs && d.pgs.length) {
+            document.getElementById("pg-list").innerHTML = "";
+            d.pgs.forEach(p => { addPg(); const rows = document.querySelectorAll("#pg-list tr"); const l = rows[rows.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; if(p.br) l.querySelector(".pg-br").value = p.br; });
+        }
         if (d.auth) { document.getElementById("p-auth").value = d.auth; toggleAuth(); }
     } catch(e) {}
 }
