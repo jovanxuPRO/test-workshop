@@ -55,6 +55,7 @@ _exec_sem = asyncio.Semaphore(3)
 # AI API Key — in-memory only, never persisted to disk/DB/localStorage/logs
 # Set via env TW_AI_KEY=sk-xxx or via UI (POST /api/ai-key)
 _ai_key = os.environ.get("TW_AI_KEY", "").strip()
+_DEBUG = os.environ.get("TW_DEBUG", "").lower() in ("1", "true", "yes")
 logger.info(f"AI key {'configured' if _ai_key else 'not set — use TW_AI_KEY env or UI'}")
 # Simple rate limiter: max requests per endpoint per window
 _rate_limits = {}  # key -> [(timestamp, count), ...]
@@ -581,7 +582,7 @@ async def gnr(request: Request):
             update_tc_status(body, xml_path)
             return {"ok": f == 0, "total": t, "passed": p, "failed": f, "log": r.stdout[-5000:]}
         except Exception as ex:
-            logger.error(f"gnr failed: {ex}", exc_info=True)
+            logger.error(f"gnr failed: {ex}", exc_info=_DEBUG)
             return {"ok": False, "error": "Internal error during test execution"}
 
 
@@ -646,7 +647,7 @@ async def stream(request: Request):
     try:
         d, auth_env = gen_code(plan)
     except Exception:
-        logger.error("gen_code failed in stream", exc_info=True)
+        logger.error("gen_code failed in stream", exc_info=_DEBUG)
         PLANS.pop(pid, None)
         async def e():
             yield f"data: {json.dumps({'t':'error','msg':'Code generation failed'})}\n\n"
@@ -720,7 +721,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
                 RUN_PROCS[pid] = proc
             except Exception as ex:
-                logger.error(f"Popen failed: {ex}", exc_info=True)
+                logger.error(f"Popen failed: {ex}", exc_info=_DEBUG)
                 yield f"data: {json.dumps({'t':'error','msg':'Failed to start test process'})}\n\n"
                 return
             def w():
@@ -848,7 +849,7 @@ def report(dir: str = ""):
     try:
         return _build_report(dir)
     except Exception as ex:
-        logger.error(f"Report crash: {ex}", exc_info=True)
+        logger.error(f"Report crash: {ex}", exc_info=_DEBUG)
         return HTMLResponse(f"<body style='font-family:sans-serif;text-align:center;padding:80px;color:#888'><h2>Report Error</h2><p>{html.escape(str(ex)[:200])}</p></body>")
 
 
