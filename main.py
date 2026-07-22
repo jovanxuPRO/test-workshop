@@ -57,29 +57,43 @@ _exec_sem = asyncio.Semaphore(3)
 _AI_ENC_FILE = os.path.join(BASE, ".ai_key.enc")
 import hashlib as _hashlib, secrets as _secrets
 
-_fernet_secret = base64.urlsafe_b64encode(
-    _hashlib.sha256((os.environ.get("TW_SECRET", BASE)).encode()).digest()
-)[:32]
+_fernet_secret = _hashlib.pbkdf2_hmac(
+    "sha256", os.environ.get("TW_SECRET", BASE).encode(),
+    b"test-workshop-ai-key-v1", 100000, dklen=32
+)
 
 
 def _encrypt_key(plain: str) -> bytes:
+    """Encrypt with random IV + HMAC-XOR stream + 16-byte auth tag."""
     from base64 import urlsafe_b64encode as b64e
     key_bytes = _fernet_secret
-    salt = _secrets.token_bytes(16)
+    iv = _secrets.token_bytes(32)
     data = plain.encode()
-    # XOR cipher with key stream derived from HMAC
-    import hmac
-    stream = hmac.new(key_bytes, salt, _hashlib.sha256).digest() * ((len(data) // 32) + 1)
+    import hmac, hashlib
+    stream = hmac.new(key_bytes, iv, hashlib.sha256).digest()
+    while len(stream) < len(data):
+        stream += hmac.new(key_bytes, stream[-32:], hashlib.sha256).digest()
     encrypted = bytes(a ^ b for a, b in zip(data, stream[:len(data)]))
-    return b64e(salt + encrypted)
+    payload = iv + encrypted
+    tag = hmac.new(key_bytes, payload, hashlib.sha256).digest()[:16]
+    return b64e(payload + tag)
 
 
 def _decrypt_key(data: bytes) -> str:
+    """Verify auth tag, then decrypt. Raises on tampering."""
     from base64 import urlsafe_b64decode as b64d
     raw = b64d(data)
-    salt, encrypted = raw[:16], raw[16:]
-    import hmac
-    stream = hmac.new(_fernet_secret, salt, _hashlib.sha256).digest() * ((len(encrypted) // 32) + 1)
+    if len(raw) < 48:
+        raise ValueError("Invalid encrypted data")
+    payload, tag = raw[:-16], raw[-16:]
+    import hmac, hashlib
+    expected = hmac.new(_fernet_secret, payload, hashlib.sha256).digest()[:16]
+    if not hmac.compare_digest(tag, expected):
+        raise ValueError("Authentication failed")
+    iv, encrypted = payload[:32], payload[32:]
+    stream = hmac.new(_fernet_secret, iv, hashlib.sha256).digest()
+    while len(stream) < len(encrypted):
+        stream += hmac.new(_fernet_secret, stream[-32:], hashlib.sha256).digest()
     return bytes(a ^ b for a, b in zip(encrypted, stream[:len(encrypted)])).decode()
 
 
@@ -112,8 +126,9 @@ def _check_rate(key, max_req=60, window=60):
     if len(_rate_limits[key]) >= max_req:
         return False
     _rate_limits[key].append(now)
-    if len(_rate_limits) > 1000:
-        _rate_limits.clear()
+    # Per-key cleanup instead of global clear
+    if len(_rate_limits) > 5000:
+        _rate_limits = {k: v for k, v in _rate_limits.items() if len(_rate_limits) <= 1000 or any(t > now - window for t in v)}
     return True
 
 
