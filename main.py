@@ -517,28 +517,28 @@ async def gnr(request: Request):
             r = await asyncio.to_thread(
                 subprocess.run, ["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
                 capture_output=True, text=True, timeout=300, env=env)
-        t = p = f = 0
-        if os.path.exists(xml_path):
-            root = ET.parse(xml_path).getroot()
-            ts = root.find("testsuite")
-            if ts is None: ts = root
-            t = int(ts.get("tests", 0))
-            f = int(ts.get("failures", 0))
-            e = int(ts.get("errors", 0))
-            p = t - f - e
-        # Save to history
-        save_hist_entry({
-            "name": body.get("name", "?"),
-            "url": body.get("url", "?"),
-            "total": t, "passed": p, "failed": f, "errors": e,
-            "rate": round(p/t*100,1) if t else 0,
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "dir": os.path.basename(d),
-        })
-        return {"ok": f == 0, "total": t, "passed": p, "failed": f, "log": r.stdout[-5000:]}
-    except Exception as ex:
-        logger.error(f"gnr failed: {ex}", exc_info=True)
-        return {"ok": False, "error": "Internal error during test execution"}
+            t = p = f = 0
+            if os.path.exists(xml_path):
+                root = ET.parse(xml_path).getroot()
+                ts = root.find("testsuite")
+                if ts is None: ts = root
+                t = int(ts.get("tests", 0))
+                f = int(ts.get("failures", 0))
+                e = int(ts.get("errors", 0))
+                p = t - f - e
+            # Save to history
+            save_hist_entry({
+                "name": body.get("name", "?"),
+                "url": body.get("url", "?"),
+                "total": t, "passed": p, "failed": f, "errors": e,
+                "rate": round(p/t*100,1) if t else 0,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "dir": os.path.basename(d),
+            })
+            return {"ok": f == 0, "total": t, "passed": p, "failed": f, "log": r.stdout[-5000:]}
+        except Exception as ex:
+            logger.error(f"gnr failed: {ex}", exc_info=True)
+            return {"ok": False, "error": "Internal error during test execution"}
 
 
 PLANS = {}
