@@ -470,7 +470,7 @@ function loadHist() {
         // Seed with current config if nothing in history
         var n = document.getElementById("p-name").value.trim()||"未命名";
         var u = document.getElementById("p-url").value.trim()||"http://localhost";
-        if (n) hist = [{name:n, url:u, apis:[], pages:[], rules:"", types:["api","unit"], auth:"none", time:new Date().toLocaleString()}];
+        if (n) hist = [{name:n, url:u, apis:[], pages:[], rules:"", types:["api","ui","data"], auth:"none", time:new Date().toLocaleString()}];
     }
     document.getElementById("hist-sel").innerHTML = '<option value="">-- 选择方案 --</option>' + hist.map((p,i) => `<option value="${i}">${p.name} (${p.url}) - ${p.time||''}</option>`).join("");
     fetch('/api/history-data').then(r=>r.json()).then(d=>{
@@ -494,7 +494,7 @@ async function execHist() {
     plan.authValue = plan.authValue || "";
     plan.pages = plan.pages || plan.pgs || [];
     plan.rules = plan.rules || "";
-    plan.types = plan.types || ["api","unit"];
+    plan.types = plan.types || ["api","ui","data"];
     document.getElementById("dash").classList.remove("hidden");
     document.getElementById("dash-title").textContent = plan.name + " — 执行中...";
     document.getElementById("dash-log").textContent = "";
