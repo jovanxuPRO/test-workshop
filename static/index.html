@@ -698,6 +698,11 @@ async function execPreviewed() {
         <div class="log" id="r-log">执行中...</div>
     </div>`;
     document.getElementById("results").scrollIntoView({behavior:"smooth"});
+    // Save to plan_hist for Exec tab dropdown
+    var hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
+    hist.unshift({name: plan.name, url: plan.url, time: new Date().toLocaleString()});
+    if (hist.length > 20) hist = hist.slice(0,20);
+    try { localStorage.setItem("plan_hist", JSON.stringify(hist)); } catch(e) {}
     _runGenerate(plan);
 }
 async function _runGenerate(plan) {
