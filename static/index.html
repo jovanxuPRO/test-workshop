@@ -466,6 +466,12 @@ function _streamSSE(pid, plan) {
 // ===== EXEC =====
 function loadHist() {
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
+    if (!hist.length) {
+        // Seed with current config if nothing in history
+        var n = document.getElementById("p-name").value.trim()||"未命名";
+        var u = document.getElementById("p-url").value.trim()||"http://localhost";
+        if (n) hist = [{name:n, url:u, time:new Date().toLocaleString()}];
+    }
     document.getElementById("hist-sel").innerHTML = '<option value="">-- 选择方案 --</option>' + hist.map((p,i) => `<option value="${i}">${p.name} (${p.url}) - ${p.time||''}</option>`).join("");
     fetch('/api/history-data').then(r=>r.json()).then(d=>{
         const logs = d.history||[];
