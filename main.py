@@ -1242,8 +1242,10 @@ async def ai_suggest(request: Request):
         if _ai_key:
             try:
                 results = await _call_llm(apis, seed, model, base_url)
-                if results is not None:
+                if results is not None and len(results) > 0:
                     return {"suggestions": results, "source": "ai"}
+                elif results is not None:
+                    return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI 返回了空列表"}
             except Exception as e:
                 logger.warning(f"AI call failed, fallback: {e}")
                 return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": str(e)[:200]}
