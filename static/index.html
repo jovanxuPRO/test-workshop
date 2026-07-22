@@ -111,11 +111,26 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <textarea id="p-rules" placeholder="首页HTTP 200\n响应时间<5秒\n数据一致"></textarea>
     </div>
 
-    <button class="btn" onclick="saveToTC()" style="width:100%;background:#5c6bc0;color:#fff;font-size:15px;padding:14px;border:none;border-radius:8px;cursor:pointer">第1步: 生成用例 → 保存到用例库</button>
-    <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-go" onclick="generate()" style="flex:1">直接执行</button>
-        <a href="/tc" class="btn" style="flex:1;background:#fff;color:#5c6bc0;border:2px solid #5c6bc0;text-align:center;padding:10px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">第2步: 在用例管理中勾选执行</a>
+    <button class="btn" onclick="previewCases()" style="width:100%;background:#5c6bc0;color:#fff;font-size:15px;padding:14px;border:none;border-radius:8px;cursor:pointer;font-weight:700">生成用例预览</button>
+    <p style="text-align:center;color:#888;font-size:12px;margin:6px 0">先预览再勾选执行，或直接执行全部</p>
+
+    <!-- Case preview (shown after previewCases) -->
+    <div id="case-preview" class="hidden card" style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="margin:0" id="case-preview-title">用例预览</h3>
+            <span style="display:flex;gap:6px">
+                <button class="btn btn-sm" onclick="execPreviewed()" style="background:#26a69a;color:#fff;font-size:13px;padding:6px 16px">执行选中</button>
+                <button class="btn btn-sm" onclick="savePreviewed()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">保存到用例库</button>
+            </span>
+        </div>
+        <div style="overflow-x:auto">
+        <table style="width:100%;font-size:12px">
+            <thead><tr style="background:#f8f9fb"><th style="width:30px"><input type="checkbox" id="preview-select-all" onchange="togglePreviewAll()"></th><th>方法</th><th>路径</th><th>类型</th><th>测试内容</th></tr></thead>
+            <tbody id="case-preview-list"></tbody>
+        </table></div>
     </div>
+
+    <button class="btn btn-go" onclick="generate()" style="margin-top:8px">直接执行全部</button>
     <div id="results" class="hidden" style="margin-top:16px" aria-live="polite" aria-atomic="true"></div>
 </div>
 
@@ -441,7 +456,121 @@ async function execHist() {
     }
 }
 
-// ===== TC IMPORT =====
+// ===== CASE PREVIEW =====
+function previewCases() {
+    save();
+    const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m")?.value, p = r.querySelector(".api-p")?.value?.trim(), n = r.querySelector(".api-n")?.value?.trim(); if (p) apis.push({m,p,n}); });
+    const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u")?.value?.trim(), na = r.querySelector(".pg-na")?.value?.trim(); if (u) pgs.push({u,na}); });
+    const name = document.getElementById("p-name").value.trim()||"未命名";
+    if (!apis.length && !pgs.length) { alert('请先添加 API 接口或 Web 页面'); return; }
+    window._previewApis = apis; window._previewPgs = pgs;
+    window._previewName = name;
+    let rows = '';
+    apis.forEach((a,i) => {
+        const tests = getTestNames(a.m);
+        rows += `<tr><td><input type="checkbox" class="pv-check" value="${i}" checked data-type="api"></td>
+            <td style="font-family:monospace;font-weight:600;color:#5c6bc0">${a.m}</td>
+            <td style="font-family:monospace;font-size:11px">${a.p}</td>
+            <td style="font-size:11px">API</td>
+            <td style="font-size:11px;color:#666">${a.n}: ${tests.join(', ')}</td></tr>`;
+    });
+    pgs.forEach((p,i) => {
+        rows += `<tr><td><input type="checkbox" class="pv-check" value="${i}" checked data-type="pg"></td>
+            <td style="font-family:monospace;font-weight:600;color:#26a69a">GET</td>
+            <td style="font-family:monospace;font-size:11px">${p.u}</td>
+            <td style="font-size:11px">UI</td>
+            <td style="font-size:11px;color:#666">${p.na}: 加载/JS错误/响应式/链接/资源</td></tr>`;
+    });
+    document.getElementById('case-preview-list').innerHTML = rows;
+    document.getElementById('case-preview-title').textContent = '用例预览 (' + (apis.length+pgs.length) + '条)';
+    document.getElementById('case-preview').classList.remove('hidden');
+    document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
+}
+function getTestNames(m) {
+    const m1 = {GET:['可达性','响应体','Content-Type','响应时间','HEAD','翻页','移动端UA','JSON头'],
+        POST:['正常请求','空请求体','非法JSON','Form提交'],
+        PUT:['正常请求','空请求体'],DELETE:['删除请求'],
+        PATCH:['正常请求','空请求体'],HEAD:['可达性','响应头']};
+    return m1[m]||['可达性'];
+}
+function togglePreviewAll() {
+    const v = document.getElementById('preview-select-all').checked;
+    document.querySelectorAll('.pv-check').forEach(cb => cb.checked = v);
+}
+async function execPreviewed() {
+    const checks = document.querySelectorAll('.pv-check:checked');
+    if (!checks.length) { alert('请勾选要执行的用例'); return; }
+    let apis = [], pgs = [];
+    checks.forEach(cb => {
+        const idx = parseInt(cb.value);
+        if (cb.dataset.type === 'api' && window._previewApis) apis.push(window._previewApis[idx]);
+        else if (cb.dataset.type === 'pg' && window._previewPgs) pgs.push(window._previewPgs[idx]);
+    });
+    if (!apis.length && !pgs.length) { alert('没有可执行的用例'); return; }
+    const url = document.getElementById("p-url").value.trim() || 'http://localhost';
+    const plan = {name: window._previewName||'预览执行', url, apis, pages: pgs, types: apis.length?['api','unit']:['ui'], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value};
+    window._lastPlan = plan;
+    const escName = plan.name.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    document.getElementById("results").classList.remove("hidden");
+    document.getElementById("results").innerHTML = `<div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 id="res-title" style="margin:0">${escName} — 执行中...</h2>
+            <button class="btn" id="stop-btn" style="background:#ef5350;color:#fff;padding:8px 16px;font-size:12px">停止</button>
+        </div>
+        <div class="metrics" style="cursor:pointer" onclick="window.open('/api/report')">
+            <div class="m"><span class="v" style="color:#3498db" id="r-total">-</span><span class="l">总计</span></div>
+            <div class="m"><span class="v" style="color:#27ae60" id="r-passed">-</span><span class="l">通过</span></div>
+            <div class="m"><span class="v" style="color:#ef5350" id="r-failed">-</span><span class="l">失败</span></div>
+            <div class="m"><span class="v" style="color:#ff9800" id="r-errors">-</span><span class="l">错误</span></div>
+            <div class="m"><span class="v" style="color:#5c6bc0" id="r-rate">-</span><span class="l">通过率</span></div>
+        </div>
+        <div class="bar"><div class="bar-f" id="r-bar" style="width:0%;background:#5c6bc0"></div></div>
+        <div class="log" id="r-log">执行中...</div>
+    </div>`;
+    document.getElementById("results").scrollIntoView({behavior:"smooth"});
+    _runGenerate(plan);
+}
+async function _runGenerate(plan) {
+    window._counters = {};
+    var btn = document.getElementById("stop-btn");
+    btn._state = "running";
+    btn.onclick = function(){
+        if (btn._state === "running") {
+            fetch('/api/stop?sid=' + encodeURIComponent(window._lastPid||""), {method:'POST'});
+            if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}
+            btn.textContent = "重新执行"; btn.style.background = "#5c6bc0";
+            btn._state = "stopped";
+            document.getElementById("r-bar").style.background = "#ef5350";
+            document.getElementById("res-title").textContent = plan.name + " — 已停止";
+        } else if (btn._state === "stopped") {
+            btn.style.display = "none"; window._counters = {}; generate();
+        }
+    };
+    try {
+        const pr = await fetch('/api/plan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
+        const pd = await pr.json();
+        if (!pd.id) {
+            document.getElementById("r-bar").style.background = "#ef5350";
+            document.getElementById("r-log").textContent = "错误: " + (pd.error || "Plan submission failed");
+            return;
+        }
+        window._lastPid = pd.id;
+        _streamSSE(pd.id, plan);
+    } catch(e) {
+        document.getElementById("r-log").textContent = "网络错误: " + e.message;
+    }
+}
+async function savePreviewed() {
+    const apis = window._previewApis||[];
+    const pgs = window._previewPgs||[];
+    if (!apis.length && !pgs.length) return;
+    const plan = {name: window._previewName||'未命名', url: document.getElementById("p-url").value.trim(), apis, pages: pgs};
+    try {
+        const r = await fetch('/api/save-tc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
+        const d = await r.json();
+        alert('已保存 ' + (d.total||0) + ' 条用例到用例库');
+    } catch(e) { alert('保存失败: ' + e.message); }
+}
 let _tcs = [];
 async function saveToTC() {
     save();
