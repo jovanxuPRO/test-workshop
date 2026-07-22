@@ -211,7 +211,7 @@ def gen_code(plan):
     cf += '@pytest.fixture(scope="session")\n'
     cf += 'def browser():\n'
     cf += '    from playwright.sync_api import sync_playwright\n'
-    cf += '    headless = os.environ.get("TW_HEADLESS", "true").lower() == "true"\n'
+    cf += '    headless = os.environ.get("TW_HEADLESS", "false").lower() == "true"\n'
     cf += '    with sync_playwright() as p:\n'
     cf += '        br = p.chromium.launch(headless=headless, slow_mo=0,\n'
     cf += '            args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu"])\n'
@@ -754,10 +754,10 @@ def report(dir: str = ""):
     # Get totals from the first testsuite
     ts = root_el.find("testsuite")
     if ts is None: ts = root_el
-    total = int(ts.get("tests", 0))
-    failed = int(ts.get("failures", 0))
-    errors = int(ts.get("errors", 0))
-    skipped = int(ts.get("skipped", 0))
+    total = int(ts.get("tests", 0) or 0)
+    failed = int(ts.get("failures", 0) or 0)
+    errors = int(ts.get("errors", 0) or 0)
+    skipped = int(ts.get("skipped", 0) or 0)
     passed = total - failed - errors - skipped
     stime = float(ts.get("time", 0))
 

@@ -281,6 +281,8 @@ async function generate() {
             document.getElementById("r-log").scrollTop = document.getElementById("r-log").scrollHeight;
         } else if (d.t === "done") {
             evt.close();
+            window._activeEvt = null;
+            var sb = document.getElementById("stop-btn"); if(sb) sb.style.display = "none";
             // Fetch precise numbers from report
             setTimeout(async ()=>{
                 try{
@@ -300,7 +302,7 @@ async function generate() {
         }
         } catch(e) { /* skip malformed SSE messages */ }
     };
-    evt.onerror = function() { evt.close(); window._activeEvt = null; document.getElementById("r-bar").style.background = "#ef5350"; document.getElementById("res-title").textContent = plan.name + " — 连接中断"; };
+    evt.onerror = function() { evt.close(); window._activeEvt = null; var sb = document.getElementById("stop-btn"); if(sb) sb.style.display = "none"; document.getElementById("r-bar").style.background = "#ef5350"; document.getElementById("res-title").textContent = plan.name + " — 连接中断"; };
     } catch(e) {
         document.getElementById("r-bar").style.width = "100%";
         document.getElementById("r-bar").style.background = "#ef5350";
@@ -365,6 +367,7 @@ async function execHist() {
             document.getElementById("dash-log").scrollTop = document.getElementById("dash-log").scrollHeight;
         } else if (d.t === "done") {
             evt.close();
+            window._activeEvt = null;
             document.getElementById("m-total").textContent = d.total;
             document.getElementById("m-passed").textContent = d.passed;
             document.getElementById("m-failed").textContent = d.failed;
