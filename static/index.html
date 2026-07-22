@@ -289,6 +289,12 @@ async function generate() {
     }
     window._lastPid = pd.id;
     _streamSSE(pd.id, plan);
+    } catch(e) {
+        document.getElementById("r-bar").style.width = "100%";
+        document.getElementById("r-bar").style.background = "#ef5350";
+        document.getElementById("r-log").textContent = "网络错误: " + e.message;
+        document.getElementById("res-title").textContent = plan.name + " — 连接失败";
+    }
 }
 function _streamSSE(pid, plan) {
     const evt = new EventSource('/api/stream?id=' + pid);
@@ -331,15 +337,6 @@ function _streamSSE(pid, plan) {
     evt.onerror = function() { evt.close(); window._activeEvt = null; var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; } document.getElementById("r-bar").style.background = "#ef5350"; document.getElementById("res-title").textContent = plan.name + " — 连接中断"; };
 }
 // end _streamSSE
-
-// ===== EXEC =====
-    } catch(e) {
-        document.getElementById("r-bar").style.width = "100%";
-        document.getElementById("r-bar").style.background = "#ef5350";
-        document.getElementById("r-log").textContent = "网络错误: " + e.message;
-        document.getElementById("res-title").textContent = plan.name + " — 连接失败";
-    }
-}
 
 // ===== EXEC =====
 function loadHist() {

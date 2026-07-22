@@ -522,11 +522,10 @@ async def gnr(request: Request):
                 root = ET.parse(xml_path).getroot()
                 ts = root.find("testsuite")
                 if ts is None: ts = root
-                t = int(ts.get("tests", 0))
-                f = int(ts.get("failures", 0))
-                e = int(ts.get("errors", 0))
+                t = int(ts.get("tests", 0) or 0)
+                f = int(ts.get("failures", 0) or 0)
+                e = int(ts.get("errors", 0) or 0)
                 p = t - f - e
-            # Save to history
             save_hist_entry({
                 "name": body.get("name", "?"),
                 "url": body.get("url", "?"),
