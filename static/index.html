@@ -125,7 +125,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         </div>
         <div style="overflow-x:auto">
         <table style="width:100%;font-size:12px">
-            <thead><tr style="background:#f8f9fb"><th style="width:30px"><input type="checkbox" id="preview-select-all" onchange="togglePreviewAll()"></th><th>方法</th><th>路径</th><th>类型</th><th>测试内容</th></tr></thead>
+            <thead><tr style="background:#f8f9fb"><th style="width:30px"><input type="checkbox" id="preview-select-all" onchange="togglePreviewAll()"></th><th>编号</th><th>模块</th><th>用例标题</th><th>优先级</th><th>前置条件</th><th>方法</th><th>路径</th><th>预期结果</th></tr></thead>
             <tbody id="case-preview-list"></tbody>
         </table></div>
     </div>
@@ -465,33 +465,74 @@ function previewCases() {
     if (!apis.length && !pgs.length) { alert('请先添加 API 接口或 Web 页面'); return; }
     window._previewApis = apis; window._previewPgs = pgs;
     window._previewName = name;
-    let rows = '';
-    apis.forEach((a,i) => {
-        const tests = getTestNames(a.m);
-        rows += `<tr><td><input type="checkbox" class="pv-check" value="${i}" checked data-type="api"></td>
-            <td style="font-family:monospace;font-weight:600;color:#5c6bc0">${a.m}</td>
-            <td style="font-family:monospace;font-size:11px">${a.p}</td>
-            <td style="font-size:11px">API</td>
-            <td style="font-size:11px;color:#666">${a.n}: ${tests.join(', ')}</td></tr>`;
+    let rows = '', num = 0;
+    // Expand each API into individual test methods
+    apis.forEach((a, ai) => {
+        const tests = getTestCaseDetails(a.m, a.p, a.n);
+        tests.forEach(t => {
+            num++;
+            rows += `<tr><td><input type="checkbox" class="pv-check" value="${ai}" checked data-type="api"></td>
+                <td style="font-family:monospace;font-size:10px">TC-${String(num).padStart(3,'0')}</td>
+                <td>${name}</td>
+                <td style="font-weight:600">${t.title}</td>
+                <td style="font-size:11px;color:#ff9800">P1</td>
+                <td>${t.precondition}</td>
+                <td style="font-family:monospace;font-size:10px;color:#5c6bc0">${a.m}</td>
+                <td style="font-family:monospace;font-size:10px">${a.p}</td>
+                <td style="font-size:10px;color:#27ae60">${t.expected}</td></tr>`;
+        });
     });
-    pgs.forEach((p,i) => {
-        rows += `<tr><td><input type="checkbox" class="pv-check" value="${i}" checked data-type="pg"></td>
-            <td style="font-family:monospace;font-weight:600;color:#26a69a">GET</td>
-            <td style="font-family:monospace;font-size:11px">${p.u}</td>
-            <td style="font-size:11px">UI</td>
-            <td style="font-size:11px;color:#666">${p.na}: 加载/JS错误/响应式/链接/资源</td></tr>`;
+    // Expand each Page into individual UI tests
+    pgs.forEach((p, pi) => {
+        const uiTests = [
+            {title:'页面加载渲染',precondition:'页面可公网访问',expected:'body可见, title非空'},
+            {title:'控制台无JS错误',precondition:'无',expected:'无pageerror事件'},
+            {title:'页面加载时间',precondition:'网络延迟<10s',expected:'加载时间<10秒'},
+            {title:'移动端视口适配',precondition:'无',expected:'375x812视口正常渲染'},
+            {title:'页面导航元素',precondition:'页面含超链接',expected:'至少存在1个a标签'},
+            {title:'静态资源加载',precondition:'无',expected:'无4xx/5xx资源请求'},
+        ];
+        uiTests.forEach(t => {
+            num++;
+            rows += `<tr><td><input type="checkbox" class="pv-check" value="${pi}" checked data-type="pg"></td>
+                <td style="font-family:monospace;font-size:10px">TC-${String(num).padStart(3,'0')}</td>
+                <td>${name}</td>
+                <td style="font-weight:600">[UI] ${p.na}: ${t.title}</td>
+                <td style="font-size:11px;color:#ff9800">P1</td>
+                <td>${t.precondition}</td>
+                <td style="font-family:monospace;font-size:10px;color:#26a69a">GET</td>
+                <td style="font-family:monospace;font-size:10px">${p.u}</td>
+                <td style="font-size:10px;color:#27ae60">${t.expected}</td></tr>`;
+        });
     });
     document.getElementById('case-preview-list').innerHTML = rows;
-    document.getElementById('case-preview-title').textContent = '用例预览 (' + (apis.length+pgs.length) + '条)';
+    document.getElementById('case-preview-title').textContent = '用例预览 (' + num + '条)';
     document.getElementById('case-preview').classList.remove('hidden');
     document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
 }
-function getTestNames(m) {
-    const m1 = {GET:['可达性','响应体','Content-Type','响应时间','HEAD','翻页','移动端UA','JSON头'],
-        POST:['正常请求','空请求体','非法JSON','Form提交'],
-        PUT:['正常请求','空请求体'],DELETE:['删除请求'],
-        PATCH:['正常请求','空请求体'],HEAD:['可达性','响应头']};
-    return m1[m]||['可达性'];
+function getTestCaseDetails(m, p, n) {
+    const all = {
+        GET: [{title:n+'可达性',precondition:'服务运行中',expected:'HTTP 200/301/302/304'},
+              {title:n+'响应体验证',precondition:'无',expected:'响应体>0或状态码≥300'},
+              {title:n+'Content-Type检查',precondition:'无',expected:'响应含content-type'},
+              {title:n+'响应时间',precondition:'网络通畅',expected:'<5秒'},
+              {title:n+'HEAD请求',precondition:'支持HEAD',expected:'状态码<500'},
+              {title:n+'分页参数',precondition:'支持?page=',expected:'状态码<500'},
+              {title:n+'移动端UA',precondition:'无',expected:'iPhone UA返回<500'},
+              {title:n+'JSON Accept头',precondition:'支持JSON',expected:'状态码<500'}],
+        POST:[{title:n+'正常提交',precondition:'无',expected:'状态码<500'},
+              {title:n+'空请求体',precondition:'接口接收空body',expected:'状态码<500'},
+              {title:n+'非法JSON',precondition:'接口解析JSON',expected:'状态码<500'},
+              {title:n+'Form表单',precondition:'接口接收form-data',expected:'状态码<500'}],
+        PUT:[{title:n+'正常更新',precondition:'无',expected:'状态码<500'},
+             {title:n+'空请求体',precondition:'接口接收空body',expected:'状态码<500'}],
+        DELETE:[{title:n+'删除请求',precondition:'资源存在',expected:'状态码<500'}],
+        PATCH:[{title:n+'部分更新',precondition:'无',expected:'状态码<500'},
+               {title:n+'空请求体',precondition:'接口接收空body',expected:'状态码<500'}],
+        HEAD:[{title:n+'HEAD请求',precondition:'支持HEAD',expected:'状态码<500'},
+              {title:n+'响应头验证',precondition:'无',expected:'headers非空'}],
+    };
+    return all[m] || [{title:n+'可达性',precondition:'服务运行中',expected:'状态码<500'}];
 }
 function togglePreviewAll() {
     const v = document.getElementById('preview-select-all').checked;
@@ -500,12 +541,13 @@ function togglePreviewAll() {
 async function execPreviewed() {
     const checks = document.querySelectorAll('.pv-check:checked');
     if (!checks.length) { alert('请勾选要执行的用例'); return; }
-    let apis = [], pgs = [];
+    let apiSet = new Set(), pgSet = new Set();
     checks.forEach(cb => {
-        const idx = parseInt(cb.value);
-        if (cb.dataset.type === 'api' && window._previewApis) apis.push(window._previewApis[idx]);
-        else if (cb.dataset.type === 'pg' && window._previewPgs) pgs.push(window._previewPgs[idx]);
+        if (cb.dataset.type === 'api') apiSet.add(parseInt(cb.value));
+        else pgSet.add(parseInt(cb.value));
     });
+    let apis = [...apiSet].map(i => window._previewApis[i]).filter(Boolean);
+    let pgs = [...pgSet].map(i => window._previewPgs[i]).filter(Boolean);
     if (!apis.length && !pgs.length) { alert('没有可执行的用例'); return; }
     const url = document.getElementById("p-url").value.trim() || 'http://localhost';
     const plan = {name: window._previewName||'预览执行', url, apis, pages: pgs, types: apis.length?['api','unit']:['ui'], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value};
