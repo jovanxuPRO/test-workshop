@@ -129,8 +129,20 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
             </span>
         </div>
         <div style="overflow-x:auto">
-        <table style="width:100%;font-size:12px">
-            <thead><tr style="background:#f8f9fb"><th style="width:30px"><input type="checkbox" id="preview-select-all" onchange="togglePreviewAll()"></th><th>编号</th><th>模块</th><th>用例标题</th><th>优先级</th><th>前置条件</th><th>方法</th><th>路径</th><th>预期结果</th></tr></thead>
+        <table style="width:100%;font-size:12px;table-layout:auto" id="preview-table">
+            <thead><tr style="background:#f8f9fb">
+                <th style="width:28px;position:sticky;left:0;background:#f8f9fb"><input type="checkbox" id="preview-select-all" onchange="togglePreviewAll()"></th>
+                <th style="width:55px">编号</th>
+                <th style="width:80px">模块</th>
+                <th style="min-width:180px">用例标题</th>
+                <th style="width:50px">优先级</th>
+                <th style="min-width:120px">前置条件</th>
+                <th style="width:55px">方法</th>
+                <th style="min-width:140px">路径</th>
+                <th style="min-width:140px">预期结果</th>
+                <th style="min-width:120px">测试步骤</th>
+                <th style="width:70px">测试数据</th>
+            </tr></thead>
             <tbody id="case-preview-list"></tbody>
         </table></div>
     </div>
@@ -523,50 +535,64 @@ function previewCases() {
     if (!apis.length && !pgs.length) { alert('请先添加 API 接口或 Web 页面'); return; }
     window._previewApis = apis; window._previewPgs = pgs;
     window._previewName = name;
-    document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:#5c6bc0">AI 正在分析 API 结构生成用例...</td></tr>';
+    document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#5c6bc0">AI 正在分析 API 结构生成用例...</td></tr>';
     document.getElementById('case-preview-title').textContent = '用例预览 (生成中...)';
     document.getElementById('case-preview').classList.remove('hidden');
     document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
-    // Fetch AI suggestions
-    fetch('/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apis, pages:pgs})})
+    // Fetch AI suggestions with random seed for variation each regeneration
+    const seed = Date.now() % 10000;
+    fetch('/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apis, pages:pgs, seed})})
     .then(r=>r.json()).then(d=>{
         const suggestions = d.suggestions||[];
         window._previewSuggestions = suggestions;
-        let rows = '';
+        let rows = '', num = 0;
         const priColor = {P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0',P3:'#888'};
+        const stepTemplates = ['发送 {m} {p}','发送 {m} {p}，验证状态码','发送 {m} {p}，解析响应体验证','构造请求 → 发送 {m} {p} → 断言结果'];
+        const dataTemplates = ['无','正常业务数据','{"key":"value"}','边界值测试','空值/null'];
         suggestions.forEach((s, i) => {
-            rows += `<tr><td><input type="checkbox" class="pv-check" value="${i}" checked></td>
-                <td style="font-family:monospace;font-size:10px">TC-${String(i+1).padStart(3,'0')}</td>
-                <td>${name}</td>
-                <td style="font-weight:600">${s.title}</td>
-                <td style="font-size:11px;font-weight:700;color:${priColor[s.priority]}">${s.priority}</td>
-                <td style="font-size:10px">${s.precondition}</td>
-                <td style="font-family:monospace;font-size:10px;color:#5c6bc0">${s.method}</td>
-                <td style="font-family:monospace;font-size:10px">${s.path}</td>
-                <td style="font-size:10px;color:#27ae60">${s.expected}</td></tr>`;
+            num++;
+            const step = stepTemplates[i % stepTemplates.length].replace('{m}',s.method).replace('{p}',s.path);
+            const tdata = (i % 3 === 0) ? dataTemplates[i % dataTemplates.length] : '无';
+            rows += `<tr style="border-bottom:1px solid #eee">
+                <td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td>
+                <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
+                <td style="padding:6px 4px;font-size:11px">${name}</td>
+                <td style="font-weight:600;padding:6px 4px">${s.title}</td>
+                <td style="font-size:11px;font-weight:700;color:${priColor[s.priority]};padding:6px 4px">${s.priority}</td>
+                <td style="font-size:10px;padding:6px 4px">${s.precondition}</td>
+                <td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td>
+                <td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td>
+                <td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td>
+                <td style="font-size:10px;padding:6px 4px">${s.steps||step}</td>
+                <td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||tdata}</td></tr>`;
         });
         // Add UI tests for pages
         pgs.forEach((p, pi) => {
             const pp = p.u === '/' || p.u === '' ? 'P0' : 'P1';
-            [{title:'页面加载渲染',pre:'页面可公网访问',exp:'body可见, title非空',pri:pp},
-             {title:'控制台无JS错误',pre:'无',exp:'无pageerror事件',pri:'P1'},
-             {title:'加载时间<10s',pre:'网络延迟<10s',exp:'加载时间<10秒',pri:'P2'},
-             {title:'移动端适配',pre:'无',exp:'375x812视口正常',pri:'P2'},
-             {title:'页面导航元素',pre:'页面含超链接',exp:'至少1个a标签',pri:'P2'},
-             {title:'静态资源加载',pre:'无',exp:'无4xx/5xx请求',pri:'P1'},
+            [{title:'页面加载渲染',pre:'页面可公网访问',exp:'body可见, title非空',pri:pp,stp:'打开'+p.u+'，等待load事件'},
+             {title:'控制台无JS错误',pre:'无',exp:'无pageerror事件',pri:'P1',stp:'打开页面，监听console.error'},
+             {title:'加载时间<10s',pre:'网络延迟<10s',exp:'加载时间<10秒',pri:'P2',stp:'计时打开页面至networkidle'},
+             {title:'移动端适配',pre:'无',exp:'375x812视口正常',pri:'P2',stp:'设置viewport 375x812后打开页面'},
+             {title:'页面导航元素',pre:'页面含超链接',exp:'至少1个a标签',pri:'P2',stp:'打开页面, page.locator("a").count()'},
+             {title:'静态资源加载',pre:'无',exp:'无4xx/5xx请求',pri:'P1',stp:'打开页面, 监听response事件收集4xx'},
             ].forEach(t => {
-                rows += `<tr><td><input type="checkbox" class="pv-check" value="pg_${pi}" checked></td>
-                    <td style="font-family:monospace;font-size:10px">TC-${String(suggestions.length+rows.split('</tr>').length).padStart(3,'0')}</td>
-                    <td>${name}</td><td>[UI] ${p.na}: ${t.title}</td>
-                    <td style="font-size:11px;font-weight:700;color:${priColor[t.pri]}">${t.pri}</td>
-                    <td style="font-size:10px">${t.pre}</td>
-                    <td style="font-family:monospace;font-size:10px;color:#26a69a">GET</td>
-                    <td style="font-family:monospace;font-size:10px">${p.u}</td>
-                    <td style="font-size:10px;color:#27ae60">${t.exp}</td></tr>`;
+                num++;
+                rows += `<tr style="border-bottom:1px solid #eee">
+                    <td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="pg_${pi}" checked></td>
+                    <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
+                    <td style="padding:6px 4px;font-size:11px">${name}</td>
+                    <td style="font-weight:600;padding:6px 4px">[UI] ${p.na}: ${t.title}</td>
+                    <td style="font-size:11px;font-weight:700;color:${priColor[t.pri]};padding:6px 4px">${t.pri}</td>
+                    <td style="font-size:10px;padding:6px 4px">${t.pre}</td>
+                    <td style="font-family:monospace;font-size:10px;color:#26a69a;padding:6px 4px">GET</td>
+                    <td style="font-family:monospace;font-size:10px;padding:6px 4px">${p.u}</td>
+                    <td style="font-size:10px;color:#27ae60;padding:6px 4px">${t.exp}</td>
+                    <td style="font-size:10px;padding:6px 4px">${t.stp}</td>
+                    <td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`;
             });
         });
         document.getElementById('case-preview-list').innerHTML = rows;
-        document.getElementById('case-preview-title').textContent = 'AI 用例预览 (' + (suggestions.length + pgs.length*6) + '条)';
+        document.getElementById('case-preview-title').textContent = '用例预览 (' + num + '条)';
     }).catch(e=>{
         document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
     });

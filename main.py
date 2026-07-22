@@ -1224,10 +1224,18 @@ _RESOURCE_PATTERNS = {
 
 @app.post("/api/ai-suggest")
 async def ai_suggest(request: Request):
-    """AI-powered test case suggestion based on API path analysis."""
+    """AI-powered test case suggestion with seed-based variation."""
     body = await request.json()
     apis = body.get("apis", [])
+    seed = body.get("seed", 0)
     suggestions = []
+    step_templates = [
+        "发送 {m} {p}", "发送 {m} {p}，检查状态码",
+        "构造请求 → {m} {p} → 解析响应",
+        "1.准备测试数据 2.发送 {m} {p} 3.验证结果",
+    ]
+    import random as _rand
+    _rand.seed(seed)
     for api in apis:
         m = api.get("m", "GET")
         p = api.get("p", "/")
@@ -1238,7 +1246,9 @@ async def ai_suggest(request: Request):
         for pattern, config in _RESOURCE_PATTERNS.items():
             if re.search(pattern, path_lower):
                 matched = True
-                for s in config.get("scenarios", []):
+                scenarios = list(config.get("scenarios", []))
+                _rand.shuffle(scenarios)
+                for s in scenarios:
                     priority = "P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if "列表" in s or "详情" in s else "P2")
                     suggestions.append({
                         "title": f"{prefix}-{s}",
@@ -1246,7 +1256,7 @@ async def ai_suggest(request: Request):
                         "method": m, "path": p,
                         "expected": "HTTP 200/201" if "创建" in s or "正常" in s else ("HTTP 400" if "缺少" in s or "无效" in s or "错误" in s or "不存在" in s or "空" in s else "HTTP 200"),
                         "precondition": "服务已启动" if "正常" in s or "列表" in s else ("测试数据已准备" if "存在" in s else "无"),
-                        "steps": f"1. 发送 {m} {p}" + (f"\\n2. Body: 正常数据" if m in ("POST","PUT","PATCH") else ""),
+                        "steps": _rand.choice(step_templates).replace("{m}", m).replace("{p}", p),
                     })
                 break
         if not matched:
@@ -1257,7 +1267,8 @@ async def ai_suggest(request: Request):
                 ("异常参数容错", "P2", "不应返回500", "无"),
             ]
             for title, pri, exp, pre in base:
-                suggestions.append({"title": f"{prefix}-{title}", "priority": pri, "method": m, "path": p, "expected": exp, "precondition": pre})
+                suggestions.append({"title": f"{prefix}-{title}", "priority": pri, "method": m, "path": p, "expected": exp, "precondition": pre,
+                    "steps": _rand.choice(step_templates).replace("{m}", m).replace("{p}", p)})
     return {"suggestions": suggestions}
 
 
