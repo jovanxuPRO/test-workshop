@@ -1099,7 +1099,7 @@ async def set_ai_key(request: Request):
         return {"ok": False, "error": "Key too short"}
     _ai_key = key
     logger.info("AI key updated via UI (length=%d, source=user)", len(key))
-    return {"ok": True, "masked": key[:4] + "****" + key[-4:] if len(key) > 8 else "****"}
+    return {"ok": True, "masked": key[:6] + "****" if len(key) > 6 else "****"}
 
 
 _RESOURCE_PATTERNS = {
