@@ -174,8 +174,6 @@ function toggleModule(mod) {
     if (el) { el.style.display = el.style.display === 'none' ? '' : 'none'; }
     if (tg) { tg.textContent = tg.textContent === '▼' ? '▶' : '▼'; }
 }
-        </tr>`).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:#888">暂无用例，点击「+ 新增用例」添加</td></tr>';
-}
 
 function openAdd() {
     document.getElementById('modal-title').textContent = '新增用例';
