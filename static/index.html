@@ -126,7 +126,7 @@ pre.log{background:#1a1c23;color:#a2a3b7;padding:16px;border-radius:8px;font-siz
         <a onclick="navTo('exec')" id="nav-exec"><span class="n">&#9654;</span>执行测试</a>
         <a onclick="navTo('report')" id="nav-report"><span class="n">&#x1F4CA;</span>测试报告</a>
     </nav>
-    <div class="build-info">version 2.0</div>
+    <div class="sidebar-bottom">测试工坊 v2 — 测任何网站</div>
 </aside>
 
 <main class="main" id="main-content">
@@ -575,73 +575,34 @@ function onPlanSelect() {
 async function execPlan() {
     const i = document.getElementById('exec-plan-select').value;
     if (i === '') return;
-    navTo('exec');
     let hist = JSON.parse(localStorage.getItem('plan_hist')||'[]');
     const plan = hist[i];
-    const btn = document.getElementById('btn-exec-plan');
-    const log = document.getElementById('exec-log');
-    const bar = document.getElementById('p-bar');
-    if (!log || !bar) return;
-    btn.disabled = true; btn.textContent = '执行中...';
-    bar.className = 'progress-fill progress-running'; bar.style.width = '30%';
-    log.classList.remove('hidden'); log.textContent = '正在后端生成测试代码并执行...\n';
-    try {
-        const resp = await fetch('/api/generate-and-run', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(plan)
-        });
-        const d = await resp.json();
-        document.getElementById('m-total').textContent = (d.results && d.results.total) || 0;
-        document.getElementById('m-passed').textContent = (d.results && d.results.passed) || 0;
-        document.getElementById('m-failed').textContent = (d.results && d.results.failed) || 0;
-        const t = d.results ? d.results.total : 0;
-        const p = d.results ? d.results.passed : 0;
-        document.getElementById('m-rate').textContent = t ? Math.round(p/t*100)+'%' : '-';
-        bar.className = 'progress-fill ' + (d.ok ? 'progress-ok' : 'progress-fail');
-        bar.style.width = d.ok ? '100%' : '80%';
-    log.textContent = '正在执行...(实时)';
-    log.scrollTop = log.scrollHeight;
+    const btn = document.getElementById('btn-exec-plan'), log = document.getElementById('exec-log'), bar = document.getElementById('p-bar');
+    btn.disabled = true; btn.textContent = '执行中...'; bar.className = 'progress-fill progress-running'; bar.style.width = '3%';
+    log.classList.remove('hidden'); log.textContent = '';
+    document.getElementById('m-total').textContent='0'; document.getElementById('m-passed').textContent='0'; document.getElementById('m-failed').textContent='0'; document.getElementById('m-rate').textContent='-';
+    let tt=0,pp=0,ff=0;
 
-    // SSE stream
-    const planStr = encodeURIComponent(JSON.stringify(plan));
-    const evt = new EventSource(`/api/stream-execute?plan=${planStr}`);
-    let tt = 0, pp = 0, ff = 0;
-
+    const evt = new EventSource('/api/stream-execute?plan='+encodeURIComponent(JSON.stringify(plan)));
     evt.onmessage = function(e) {
         const d = JSON.parse(e.data);
-        if (d.type === 'start') {
-            bar.style.width = '5%';
-        } else if (d.type === 'test') {
-            const color = d.status === 'pass' ? '#27ae60' : d.status === 'fail' ? '#e74c3c' : '#888';
-            log.textContent += '\n' + d.line;
-            if (d.status === 'pass') { pp++; tt++; }
-            else if (d.status === 'fail') { ff++; tt++; }
-            document.getElementById('m-total').textContent = tt;
-            document.getElementById('m-passed').textContent = pp;
-            document.getElementById('m-failed').textContent = ff;
-            document.getElementById('m-rate').textContent = tt ? Math.round(pp/tt*100)+'%' : '-';
-            log.scrollTop = log.scrollHeight;
-            bar.style.width = Math.min(95, 5 + tt * 2) + '%';
-        } else if (d.type === 'done') {
+        if (d.type==='start') { log.textContent += ' 开始: '+plan.name+'\n'; }
+        else if (d.type==='test') {
+            log.textContent += d.line+'\n';
+            if (d.status==='pass'){pp++;tt++}else if(d.status==='fail'){ff++;tt++}
+            document.getElementById('m-total').textContent=tt; document.getElementById('m-passed').textContent=pp; document.getElementById('m-failed').textContent=ff;
+            document.getElementById('m-rate').textContent=tt?Math.round(pp/tt*100)+'%':'-';
+            bar.style.width=Math.min(98,3+tt*3)+'%'; log.scrollTop=log.scrollHeight;
+        } else if (d.type==='done') {
             evt.close();
-            document.getElementById('m-total').textContent = d.total;
-            document.getElementById('m-passed').textContent = d.passed;
-            document.getElementById('m-failed').textContent = d.failed;
-            document.getElementById('m-rate').textContent = d.rate+'%';
-            bar.className = 'progress-fill '+(d.failed===0?'progress-ok':'progress-fail');
-            bar.style.width = '100%';
-            log.textContent += '\n\n=== '+d.msg+' ===';
+            document.getElementById('m-total').textContent=d.total; document.getElementById('m-passed').textContent=d.passed; document.getElementById('m-failed').textContent=d.failed;
+            document.getElementById('m-rate').textContent=d.rate+'%';
+            bar.className='progress-fill '+(d.failed===0?'progress-ok':'progress-fail'); bar.style.width='100%';
+            log.textContent += '\n=== '+d.msg+' ===\n';
+            btn.disabled=false; btn.textContent='重新执行';
         }
     };
-    evt.onerror = function() { evt.close(); bar.className = 'progress-fill progress-fail'; bar.style.width = '100%'; };
-    btn.disabled = false; btn.textContent = '执行选中方案';
-        log.scrollTop = log.scrollHeight;
-    } catch(e) {
-        bar.className = 'progress-fill progress-fail'; bar.style.width = '100%';
-        log.textContent = '异常: ' + e.message;
-    }
-    btn.disabled = false; btn.textContent = '执行选中方案';
+    evt.onerror=function(){evt.close();bar.className='progress-fill progress-fail';bar.style.width='100%';log.textContent+='\n中断';btn.disabled=false;btn.textContent='重新执行';};
 }
 function delPlan(i){let hist=JSON.parse(localStorage.getItem('plan_hist')||'[]');hist.splice(i,1);localStorage.setItem('plan_hist',JSON.stringify(hist));loadHist();}
 function exportHist(){const d=localStorage.getItem('plan_hist')||'[]';const b=new Blob([d],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='test-plans.json';a.click();}

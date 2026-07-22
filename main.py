@@ -37,6 +37,22 @@ BASE_URL = "{base_url}"
 def client():
     with httpx.Client(base_url=BASE_URL, timeout=20, follow_redirects=True) as c:
         yield c
+
+@pytest.fixture(scope="session")
+def browser():
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        b = p.chromium.launch(headless=True)
+        yield b
+        b.close()
+
+@pytest.fixture
+def page(browser):
+    ctx = browser.new_context()
+    pg = ctx.new_page()
+    pg.set_default_timeout(15000)
+    yield pg
+    ctx.close()
 '''
     with open(os.path.join(out_dir, 'conftest.py'), 'w', encoding='utf-8') as f:
         f.write(conftest)
@@ -76,7 +92,29 @@ def client():
         with open(os.path.join(out_dir, 'test_api.py'), 'w', encoding='utf-8') as f:
             f.write('\n'.join(api_lines))
 
-    # Data tests
+    # Page tests (Playwright)
+    if types and 'ui' in types and pages:
+        page_lines = ['import pytest', 'from conftest import BASE_URL', '', '']
+        for i, pg in enumerate(pages):
+            u = pg.get('u', pg.get('url', '/')); na = safe_name(pg.get('na', pg.get('name', ''))); ac = pg.get('ac', pg.get('action', ''))
+            cls = f"Test_Page_{na[:25]}"
+            page_lines.append(f'class {cls}:')
+            page_lines.append(f'    """Page: {u} - {ac}"""')
+            page_lines.append('')
+            page_lines.append(f'    def test_page_loads(self, page):')
+            page_lines.append(f'        page.goto(BASE_URL + "{u}")')
+            page_lines.append(f'        assert page.title() is not None')
+            page_lines.append(f'        assert page.locator("body").is_visible()')
+            page_lines.append('')
+            page_lines.append(f'    def test_page_no_js_error(self, page):')
+            page_lines.append(f'        errors = []')
+            page_lines.append(f'        page.on("pageerror", lambda err: errors.append(str(err)))')
+            page_lines.append(f'        page.goto(BASE_URL + "{u}")')
+            page_lines.append(f'        page.wait_for_timeout(2000)')
+            page_lines.append(f'        assert len(errors) == 0, f"JS errors: {{errors}}"')
+            page_lines.append('')
+        with open(os.path.join(out_dir, 'test_ui.py'), 'w', encoding='utf-8') as f:
+            f.write('\n'.join(page_lines))
     if types and 'data' in types and rules:
         data_lines = ['import pytest', '', 'class TestDataValidation:', '']
         for i, rule in enumerate(rules):
@@ -99,7 +137,7 @@ def client():
 
 
 def run_tests(test_dir):
-    cmd = ['python', '-m', 'pytest', test_dir, '-v', '--tb=short', '--color=no', '--timeout=30']
+    cmd = ['python', '-m', 'pytest', test_dir, '-v', '--tb=short', '--color=no']
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired:
