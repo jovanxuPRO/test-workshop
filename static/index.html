@@ -749,11 +749,22 @@ async function execPreviewed() {
     const suggestions = window._previewSuggestions||[];
     let apiSet = new Set();
     checks.forEach(cb => {
-        const s = suggestions[parseInt(cb.value)];
-        if (s) apiSet.add(s.method + '|' + s.path);
+        const idx = parseInt(cb.value);
+        if (!isNaN(idx)) {
+            const s = suggestions[idx];
+            if (s) apiSet.add(s.method + '|' + s.path);
+        }
     });
     let apis = [...apiSet].map(k => { const [m,p] = k.split('|'); return {m,p,n:p}; });
-    if (!apis.length) { alert('没有可执行的用例'); return; }
+    let pgs = window._previewPgs||[];
+    // Also collect checked UI pages
+    checks.forEach(cb => {
+        if (String(cb.value).startsWith('pg_')) {
+            const pi = parseInt(cb.value.replace('pg_',''));
+            if (!isNaN(pi) && pgs[pi]) { /* already included via apiSet */ }
+        }
+    });
+    if (!apis.length && !pgs.length) { alert('没有可执行的用例'); return; }
     const url = document.getElementById("p-url").value.trim() || 'http://localhost';
     const plan = {name: window._previewName||'预览执行', url, apis, pages: pgs, types: apis.length?['api','unit']:['ui'], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value};
     window._lastPlan = plan;
@@ -815,7 +826,7 @@ async function savePreviewed() {
     try {
         const r = await fetch('/api/save-tc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
         const d = await r.json();
-        alert('已保存 ' + (d.total||0) + ' 条用例到用例库');
+        alert('已保存 ' + (d.added||0) + ' 条用例到用例库（总计' + (d.total||0) + '条）');
     } catch(e) { alert('保存失败: ' + e.message); }
 }
 let _tcs = [];

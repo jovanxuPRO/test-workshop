@@ -1134,9 +1134,10 @@ async def add_tc(request: Request):
 async def save_plan_to_tc(request: Request):
     """Save plan's APIs/pages to TC library without executing."""
     b = await request.json()
+    before = len(load_tc())
     save_auto_tcs(b)
-    existing = load_tc()
-    return {"ok": True, "total": len(existing)}
+    after = len(load_tc())
+    return {"ok": True, "added": after - before, "total": after}
 
 
 @app.get("/api/ai-key-status")
