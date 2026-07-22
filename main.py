@@ -308,8 +308,8 @@ def gen_code(plan):
     with open(os.path.join(out, "conftest.py"), "w", encoding="utf-8") as f:
         f.write(cf)
 
-    # unit tests — only if api/unit type requested
-    if "api" in types or "unit" in types:
+    # unit tests — only if api/unit type requested and not exact mode
+    if ("api" in types or "unit" in types) and not plan.get("exact"):
         ut = 'import pytest, httpx, time\n'
         ut += f'B = "{url}"\n'
         ut += 'class TestUnit:\n'
@@ -356,6 +356,7 @@ def gen_code(plan):
     if "api" in types and apis:
         lines = ["import pytest, time", ""]
         seen = set()
+        exact = plan.get("exact", False)  # exact mode: 1 test per API (for preview execution)
         for ai, a in enumerate(apis):
             m = a.get("m", "GET")
             if m not in ("GET", "POST", "PUT", "DELETE", "HEAD", "PATCH", "OPTIONS"):
@@ -370,7 +371,9 @@ def gen_code(plan):
             lines.append(f"class Test_{cn}:")
             lines.append(f'    """{m} {p}"""')
             lines.append("")
-            if m == "GET":
+            if exact:
+                tests = [("ok", f'c.request("{m}","{tp}")', "r.status_code < 500")]
+            elif m == "GET":
                 tests = [
                     ("ok", f'c.get("{tp}")', "r.status_code in (200,301,302,304)"),
                     ("body", f'c.get("{tp}")', "len(r.content) > 0 or r.status_code >= 300"),

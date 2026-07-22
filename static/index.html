@@ -608,31 +608,29 @@ function toggleLock(el, key) {
     }
 }
 async function execPreviewed() {
-    const checks = document.querySelectorAll('.pv-check:checked');
-    if (!checks.length) { alert('请勾选要执行的用例'); return; }
-    // Use original APIs/pages — gen_code generates its own test methods
-    const apis = window._previewApis||[];
-    const pgs = window._previewPgs||[];
-    if (!apis.length && !pgs.length) { alert('没有可执行的用例'); return; }
-    const url = document.getElementById("p-url").value.trim() || 'http://localhost';
-    const types = ['api','unit'];
-    if (pgs.length) types.push('ui');
-    const plan = {name: window._previewName||'预览执行', url, apis, pages: pgs, types, auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value};
+    const suggestions = window._previewSuggestions||[];
+    if (!suggestions.length) { alert('请先生成用例预览'); return; }
+    // Build plan from AI suggestions — each becomes 1 test via gen_code
+    const plan = {
+        name: window._previewName||'预览执行',
+        url: document.getElementById("p-url").value.trim() || 'http://localhost',
+        apis: suggestions.map(s => ({m:s.method||'GET', p:s.path||'/', n:s.title||s.path})),
+        pages: window._previewPgs||[],
+        types: ['api','unit'],
+        exact: true,
+        auth: document.getElementById("p-auth").value,
+        authValue: document.getElementById("p-auth-value").value,
+    };
+    if ((window._previewPgs||[]).length) plan.types.push('ui');
     window._lastPlan = plan;
-    const escName = plan.name.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const escName = (plan.name||'').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     document.getElementById("results").classList.remove("hidden");
     document.getElementById("results").innerHTML = `<div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <h2 id="res-title" style="margin:0">${escName} — 执行中...</h2>
             <button class="btn" id="stop-btn" style="background:#ef5350;color:#fff;padding:8px 16px;font-size:12px">停止</button>
         </div>
-        <div class="metrics" style="cursor:pointer" onclick="window.open('/api/report')">
-            <div class="m"><span class="v" style="color:#3498db" id="r-total">-</span><span class="l">总计</span></div>
-            <div class="m"><span class="v" style="color:#27ae60" id="r-passed">-</span><span class="l">通过</span></div>
-            <div class="m"><span class="v" style="color:#ef5350" id="r-failed">-</span><span class="l">失败</span></div>
-            <div class="m"><span class="v" style="color:#ff9800" id="r-errors">-</span><span class="l">错误</span></div>
-            <div class="m"><span class="v" style="color:#5c6bc0" id="r-rate">-</span><span class="l">通过率</span></div>
-        </div>
+        <div class="metrics"><div class="m"><span class="v" style="color:#3498db" id="r-total">-</span><span class="l">总计</span></div><div class="m"><span class="v" style="color:#27ae60" id="r-passed">-</span><span class="l">通过</span></div><div class="m"><span class="v" style="color:#ef5350" id="r-failed">-</span><span class="l">失败</span></div><div class="m"><span class="v" style="color:#ff9800" id="r-errors">-</span><span class="l">错误</span></div><div class="m"><span class="v" style="color:#5c6bc0" id="r-rate">-</span><span class="l">通过率</span></div></div>
         <div class="bar"><div class="bar-f" id="r-bar" style="width:0%;background:#5c6bc0"></div></div>
         <div class="log" id="r-log">执行中...</div>
     </div>`;
