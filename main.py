@@ -286,7 +286,7 @@ def gen_code(plan):
                     ("type", f'c.get("{tp}")', '"content-type" in str(r.headers).lower() or r.status_code >= 300'),
                     ("time", f'c.get("{tp}")', "elapsed < 5"),
                     ("head", f'c.head("{tp}")', "r.status_code < 500"),
-                    ("page", f'c.get("{tp}{\"&\" if \"?\" in tp else \"?\"}page=1")', "r.status_code < 500"),
+                    ("page", f'c.get("{tp}{"&" if "?" in tp else "?"}page=1")', "r.status_code < 500"),
                     ("mobile", f'c.get("{tp}", headers={{"User-Agent":"iPhone"}})', "r.status_code < 500"),
                     ("json_accept", f'c.get("{tp}", headers={{"Accept":"application/json"}})', "r.status_code < 500"),
                 ]
