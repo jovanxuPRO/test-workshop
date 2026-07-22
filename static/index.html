@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>测试工坊</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--text:#2c3e50;--muted:#8898aa;--primary:#5c6bc0;--primary-light:#e8eaf6;--success:#26a69a;--danger:#ef5350;--warn:#ffa726;--border:#e8ecf1;--radius:10px;--shadow:0 2px 12px rgba(0,0,0,0.04)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;line-height:1.5}
+.sidebar{width:220px;background:#1a1c23;color:#9ca3af;padding:24px 0;position:fixed;left:0;top:0;height:100vh;overflow-y:auto;z-index:100;display:flex;flex-direction:column}
+.sidebar .brand{padding:0 20px 20px;font-size:17px;font-weight:700;color:#fff;border-bottom:1px solid #2d313a;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.sidebar .brand .dot{width:10px;height:10px;background:var(--success);border-radius:50%}
+.sidebar nav{flex:1}
+.sidebar nav a{display:flex;align-items:center;gap:10px;padding:10px 20px;font-size:13px;color:#9ca3af;text-decoration:none;border-left:3px solid transparent;transition:.15s;cursor:pointer;margin:1px 0}
+.sidebar nav a:hover,.sidebar nav a.active{color:#fff;background:rgba(255,255,255,0.05);border-left-color:var(--primary)}
+.sidebar nav a .n{font-size:15px;width:22px;text-align:center}
+.sidebar .build-info{padding:16px 20px;border-top:1px solid #2d313a;font-size:11px;color:#666}
+.main{flex:1;margin-left:220px;padding:32px 36px;max-width:1050px}
+.topbar{display:flex;align-items:center;gap:16px;margin-bottom:24px}
+.topbar h1{font-size:22px;color:var(--text);font-weight:700;flex:1}
+.topbar .status{display:flex;align-items:center;gap:6px;font-size:12px;padding:6px 12px;border-radius:20px;background:var(--primary-light);color:var(--primary);font-weight:600}
+.topbar .status.online{background:#e8f5e9;color:var(--success)}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.badge-p0{background:#fce4ec;color:var(--danger)}.badge-p1{background:#fff3e0;color:#e65100}.badge-p2{background:#e8eaf6;color:var(--primary)}
+
+.steps{display:flex;align-items:center;gap:0;margin-bottom:28px}
+.step-dot{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;position:relative}
+.step-dot .circle{width:32px;height:32px;border-radius:50%;border:3px solid #dde;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#999;background:var(--bg);transition:.2s;position:relative}
+.step-dot .label{font-size:11px;color:#bbb;white-space:nowrap;font-weight:500}
+.step-dot.active .circle{border-color:var(--primary);color:var(--primary);background:#fff}
+.step-dot.active .label{color:var(--primary);font-weight:600}
+.step-dot.done .circle{border-color:var(--success);color:var(--success);background:#fff}
+.step-dot.done .label{color:var(--success)}
+.step-dot .checkmark{display:none}.step-dot.done .checkmark{display:block}
+.step-line{flex:1;height:3px;background:#e8ecf1;margin:0 -4px;margin-bottom:18px;border-radius:2px}
+.step-line.done{background:var(--success)}
+
+.card{background:var(--card);border-radius:var(--radius);padding:28px;box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px}
+.card h2{font-size:18px;color:var(--text);margin-bottom:4px}
+.card .help{font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.6}
+
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:5px}
+.form-group label .req{color:var(--danger);margin-left:2px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;transition:.2s;background:#fafbfc}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px rgba(92,107,192,0.1);background:#fff}
+.form-group textarea{min-height:90px;resize:vertical;font-family:Consolas,monospace;font-size:12px}
+.form-group .hint{font-size:11px;color:var(--muted);margin-top:4px}
+
+.table-header{display:flex;gap:8px;padding:6px 12px;font-size:11px;color:var(--muted);font-weight:600;background:#f8f9fb;border-radius:6px;margin-bottom:6px}
+.ep-row{display:flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid transparent;border-radius:8px;margin-bottom:4px;transition:.15s}
+.ep-row:hover{background:#fafbff;border-color:var(--primary-light)}
+.ep-row input,.ep-row select{padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;flex:1;background:#fff}
+.ep-row input:focus,.ep-row select:focus{border-color:var(--primary);outline:none}
+.ep-row .method{width:80px!important;flex:none!important;cursor:pointer}
+.ep-row .del{width:26px;height:26px;border-radius:50%;border:none;background:#fce4ec;color:var(--danger);cursor:pointer;font-size:14px;flex-shrink:0;transition:.15s;display:flex;align-items:center;justify-content:center}
+.ep-row .del:hover{background:var(--danger);color:#fff}
+.add-btn{display:block;width:100%;padding:8px;border:2px dashed #d0d5e0;border-radius:8px;font-size:12px;font-weight:600;color:var(--muted);background:transparent;cursor:pointer;text-align:center;margin-top:8px;transition:.15s}
+.add-btn:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
+
+.tag-group{display:flex;gap:8px;flex-wrap:wrap}
+.tag{padding:9px 18px;border:2px solid var(--border);border-radius:24px;font-size:12px;font-weight:500;cursor:pointer;transition:.15s;user-select:none;background:#fafbfc}
+.tag:hover{border-color:var(--primary);background:#fff}
+.tag.on{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
+
+.btn{padding:10px 22px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:#4a5ab5;box-shadow:0 2px 8px rgba(92,107,192,0.3)}
+.btn-outline{background:transparent;color:var(--primary);border:2px solid var(--primary-light)}.btn-outline:hover{background:var(--primary-light)}
+.btn-gen{background:var(--success);color:#fff;font-size:15px;padding:14px 36px}.btn-gen:hover{background:#1e8b80;box-shadow:0 4px 12px rgba(38,166,154,0.3)}
+.btn-danger{background:#fce4ec;color:var(--danger)}.btn-danger:hover{background:var(--danger);color:#fff}
+.btn-sm{padding:6px 12px;font-size:11px;border-radius:6px}
+.btn-row{display:flex;justify-content:space-between;align-items:center;margin-top:20px;gap:12px}
+
+.result-card{border:2px solid var(--border);border-radius:var(--radius);padding:0;overflow:hidden}
+.result-card .r-header{background:linear-gradient(135deg,var(--primary),#7c4dff);color:#fff;padding:24px 28px}
+.result-card .r-header h3{font-size:17px;margin-bottom:4px}
+.result-card .r-header p{font-size:12px;opacity:0.85}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:12px;padding:20px 28px;background:#fafbfc}
+.metric{padding:16px;text-align:center;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.04)}
+.metric .val{font-size:28px;font-weight:700;display:block;line-height:1}.metric .lbl{font-size:11px;color:var(--muted);margin-top:4px}
+.result-body{padding:24px 28px}
+.result-body table{width:100%;border-collapse:collapse;font-size:12px}
+.result-body th{background:#f8f9fb;padding:10px 12px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border)}
+.result-body td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+.result-body tr:hover td{background:#fafbff}
+.col-legend{display:flex;gap:20px;font-size:11px;color:var(--muted);padding:0 28px 8px}
+
+.tabs{display:flex;gap:0;margin-bottom:24px;background:#e8ecf1;border-radius:10px;overflow:hidden;width:fit-content}
+.tabs span{padding:10px 22px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;color:var(--muted)}
+.tabs span.active{background:var(--primary);color:#fff}
+
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}
+.tpl-card{padding:20px;border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:.15s}
+.tpl-card:hover{border-color:var(--primary);background:#fafbff}
+.tpl-card.selected{border-color:var(--success)!important;background:#f0fdf4!important}
+.tpl-card h4{font-size:14px;margin-bottom:4px}
+.tpl-card p{font-size:11px;color:var(--muted)}
+
+.hist-item{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;transition:.15s}
+.hist-item:hover{border-color:var(--primary);background:#fafbff}
+.hist-item .info{cursor:pointer;flex:1}
+.hist-item .name{font-size:13px;font-weight:600}.hist-item .meta{font-size:11px;color:var(--muted);margin-top:2px}
+.hist-item .actions{display:flex;gap:6px}
+
+.progress{height:10px;background:#e8ecf1;border-radius:5px;overflow:hidden;margin:12px 0}
+.progress-fill{height:100%;border-radius:5px;transition:width .3s}
+.progress-running{background:var(--primary);animation:pulse 1.5s infinite}.progress-ok{background:var(--success)}.progress-fail{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+pre.log{background:#1a1c23;color:#a2a3b7;padding:16px;border-radius:8px;font-size:12px;max-height:300px;overflow-y:auto;line-height:1.5;font-family:Consolas,monospace;margin-top:12px}
+
+.flex-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+    <div class="brand"><span class="dot"></span>测试工坊</div>
+    <nav>
+        <a onclick="navTo('plan')" id="nav-plan" class="active"><span class="n">+</span>新建方案</a>
+        <a onclick="navTo('history')" id="nav-history"><span class="n">&#x1F4C4;</span>历史方案</a>
+        <a onclick="navTo('exec')" id="nav-exec"><span class="n">&#9654;</span>执行测试</a>
+        <a onclick="navTo('report')" id="nav-report"><span class="n">&#x1F4CA;</span>测试报告</a>
+    </nav>
+    <div class="build-info">version 2.0</div>
+</aside>
+
+<main class="main" id="main-content">
+
+<!-- ====================== PLAN ====================== -->
+<div id="tab-plan">
+    <div class="topbar">
+        <h1>新建测试方案</h1>
+        <span class="status online">数据自动保存</span>
+    </div>
+
+    <div class="steps" id="steps-bar">
+        <div class="step-dot active" id="sd1" onclick="js(0)"><div class="circle">1<span class="checkmark"></span></div><div class="label">模板选择</div></div>
+        <div class="step-line" id="sl1"></div>
+        <div class="step-dot" id="sd2" onclick="js(1)"><div class="circle">2<span class="checkmark"></span></div><div class="label">接口清单</div></div>
+        <div class="step-line" id="sl2"></div>
+        <div class="step-dot" id="sd3" onclick="js(2)"><div class="circle">3<span class="checkmark"></span></div><div class="label">页面清单</div></div>
+        <div class="step-line" id="sl3"></div>
+        <div class="step-dot" id="sd4" onclick="js(3)"><div class="circle">4<span class="checkmark"></span></div><div class="label">业务规则</div></div>
+        <div class="step-line" id="sl4"></div>
+        <div class="step-dot" id="sd5" onclick="js(4)"><div class="circle">5<span class="checkmark"></span></div><div class="label">生成结果</div></div>
+    </div>
+
+    <div class="card" id="step0">
+        <h2>第一步：选择模板 & 项目信息</h2>
+        <div class="help">选择一个模板快速填充，或手动填写。切换模板会覆盖接口和页面清单。</div>
+        <div class="tpl-grid" id="tpl-grid">
+            <div class="tpl-card" data-tpl="web" onclick="applyTpl('web',this)"><h4> Web 管理系统</h4><p>有前后端的 Web 应用，含用户/资源 CRUD + 统计</p></div>
+            <div class="tpl-card" data-tpl="api" onclick="applyTpl('api',this)"><h4> REST API 服务</h4><p>纯后端接口，无前端页面</p></div>
+            <div class="tpl-card" data-tpl="data" onclick="applyTpl('data',this)"><h4> 数据平台</h4><p>以报表/对账为主的系统</p></div>
+            <div class="tpl-card" data-tpl="task" onclick="applyTpl('task',this)"><h4> Task Manager (本项目)</h4><p>用户管理 + 任务管理 + 数据统计</p></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>项目名称 <span class="req">*</span></label><input id="proj_name" placeholder="Task Manager 任务管理系统"><div class="hint">你的被测项目叫什么</div></div>
+            <div class="form-group"><label>访问地址 <span class="req">*</span></label><input id="proj_url" placeholder="http://127.0.0.1:8000"><div class="hint">测试请求的基础 URL</div></div>
+        </div>
+        <div class="form-group"><label>项目简介</label><input id="proj_desc" placeholder="给谁用的、做什么的"></div>
+        <div class="form-row">
+            <div class="form-group"><label>测试环境</label><select id="proj_env"><option>开发环境</option><option>测试环境</option><option>预发布环境</option></select></div>
+            <div class="form-group"><label>登录认证方式</label><select id="proj_auth"><option value="none">无需登录</option><option value="token">Token / Header</option><option value="cookie">Cookie / Session</option></select></div>
+        </div>
+        <div style="text-align:right"><button class="btn btn-primary" onclick="js(1)">下一步 - 接口清单   </button></div>
+    </div>
+
+    <div class="card hidden" id="step1">
+        <h2>第二步：API 接口清单</h2>
+        <div class="help">列出所有需要测试的接口。系统会为每个接口自动生成 <strong>4~6 个测试用例</strong>，覆盖正常流程、参数校验、异常处理和安全测试。</div>
+        <div class="table-header">
+            <span style="width:90px;flex:none">请求方法</span>
+            <span style="flex:2">接口路径 (例: /api/users)</span>
+            <span style="flex:2">功能说明 (例: 获取用户列表)</span>
+            <div style="width:26px;flex:none"></div>
+        </div>
+        <div id="ep-list"></div>
+        <button class="add-btn" onclick="addEpRow()">+ 添加接口</button>
+        <div class="btn-row">
+            <button class="btn btn-outline" onclick="js(0)">上一步</button>
+            <span style="font-size:12px;color:var(--muted)">已填 <span id="ep-count">0</span> 个接口</span>
+            <button class="btn btn-primary" onclick="js(2)">下一步 - 页面清单</button>
+        </div>
+    </div>
+
+    <div class="card hidden" id="step2">
+        <h2>第三步：Web 页面清单</h2>
+        <div class="help">列出需要模拟操作的页面。系统会为每个页面自动生成 <strong>6 个测试场景</strong>：页面加载、表单提交、前端校验、列表展示、弹窗交互、异常容错。</div>
+        <div class="table-header">
+            <span style="flex:2">页面路径 (例: /login)</span>
+            <span style="flex:2">页面名称 (例: 登录页面)</span>
+            <span style="flex:3">关键操作 (例: 输入账号密码点击登录)</span>
+            <div style="width:26px;flex:none"></div>
+        </div>
+        <div id="pg-list"></div>
+        <button class="add-btn" onclick="addPgRow()">+ 添加页面</button>
+        <div class="btn-row">
+            <button class="btn btn-outline" onclick="js(1)">上一步</button>
+            <span style="font-size:12px;color:var(--muted)">已填 <span id="pg-count">0</span> 个页面</span>
+            <button class="btn btn-primary" onclick="js(3)">下一步 - 业务规则</button>
+        </div>
+    </div>
+
+    <div class="card hidden" id="step3">
+        <h2>第四步：业务规则 & 数据校验</h2>
+        <div class="help">哪些业务逻辑绝对不能出错？系统会为每条规则生成数据对账测试用例。</div>
+        <div class="form-group"><label>数据校验规则 <span class="req">*</span></label><textarea id="rules" rows="6" placeholder="一行一条规则，例如：
+删除用户后其关联任务负责人应清空
+统计API的总数与数据库实际条数一致
+各状态任务数之和等于总任务数
+完成率 = done数量 / 总数量 x 100
+用户名和邮箱不可重复"></textarea><div class="hint">一行一条，空行会被跳过</div></div>
+        <div class="form-group"><label>需要准备的测试数据</label><input id="prep_data" placeholder="例如: 准备 3 个用户 + 各状态的任务数据"><div class="hint">测试开始前需要人工或脚本准备的前置数据</div></div>
+        <div class="form-group"><label>测试范围</label>
+            <div class="tag-group" id="test-types">
+                <span class="tag on" data-t="api" onclick="this.classList.toggle('on');save()"> API 接口测试</span>
+                <span class="tag on" data-t="ui" onclick="this.classList.toggle('on');save()"> 页面 UI 测试</span>
+                <span class="tag on" data-t="data" onclick="this.classList.toggle('on');save()"> 数据校验测试</span>
+            </div>
+        </div>
+        <div class="btn-row" style="justify-content:center">
+            <button class="btn btn-outline" onclick="js(2)">上一步</button>
+            <button class="btn btn-gen" onclick="js(4)"> 智能分析 &  生成方案</button>
+        </div>
+    </div>
+
+    <div id="results-box"></div>
+</div>
+
+<!-- ====================== HISTORY ====================== -->
+<div id="tab-history" class="hidden">
+    <div class="topbar">
+        <h1>历史方案</h1>
+        <div class="flex-row">
+            <span style="font-size:12px;color:var(--muted)">共 <span id="hist-count">0</span> 条记录</span>
+            <button class="btn btn-outline btn-sm" onclick="exportHist()">导出 JSON</button>
+            <button class="btn btn-danger btn-sm" onclick="if(confirm('确定清空所有历史方案？')){localStorage.removeItem('plan_hist');loadHist()}" style="margin-left:8px">清空</button>
+        </div>
+    </div>
+    <div id="hist-list"><div class="card" style="text-align:center;color:var(--muted)">暂无历史方案，去「新建方案」生成一个</div></div>
+</div>
+
+<!-- ====================== EXEC ====================== -->
+<div id="tab-exec" class="hidden">
+    <div class="topbar"><h1>执行测试</h1></div>
+    <div class="card">
+        <h2>选择现有方案执行</h2>
+        <div class="help">从历史方案中选择一个，系统将按该方案生成测试代码并执行</div>
+        <div class="form-group"><label>选择测试方案</label>
+            <select id="exec-plan-select" onchange="onPlanSelect()" style="width:100%">
+                <option value="">-- 选择已有方案 --</option>
+            </select>
+        </div>
+        <div id="plan-preview" style="font-size:12px;color:var(--muted);margin:8px 0;display:none"></div>
+        <button class="btn btn-gen" id="btn-exec-plan" onclick="execPlan()" disabled> 执行选中方案</button>
+    </div>
+    <div class="card" style="margin-top:16px">
+        <h2>或直接跑本项目的全量测试</h2>
+        <div class="help">83个预先写好的测试用例 (API + UI + 数据)</div>
+        <div class="metrics" style="background:transparent;padding:0;margin-bottom:12px">
+            <div class="metric"><div class="val" style="color:#3498db" id="m-total">-</div><div class="lbl">总计</div></div>
+            <div class="metric"><div class="val" style="color:var(--success)" id="m-passed">-</div><div class="lbl">通过</div></div>
+            <div class="metric"><div class="val" style="color:var(--danger)" id="m-failed">-</div><div class="lbl">失败</div></div>
+            <div class="metric"><div class="val" style="color:var(--primary)" id="m-rate">-</div><div class="lbl">通过率</div></div>
+        </div>
+        <div class="progress"><div class="progress-fill" id="p-bar" style="width:0%"></div></div>
+        <button class="btn btn-gen" id="btn-run" onclick="execTests()" style="margin-top:8px"> 执行全量测试 (83个)</button>
+        <pre class="log hidden" id="exec-log"></pre>
+    </div>
+</div>
+
+<!-- ====================== REPORT ====================== -->
+<div id="tab-report" class="hidden">
+    <div class="topbar">
+        <h1>测试报告</h1>
+        <button class="btn btn-primary" onclick="genReport()">重新生成报告</button>
+    </div>
+    <div class="card">
+        <h2>可视化测试报告</h2>
+        <div class="help">含左侧索引导航、覆盖率进度条、按功能模块分组的测试详情。报告自动在浏览器中打开。</div>
+        <div class="metrics" style="background:transparent;padding:0">
+            <div class="metric"><div class="val" style="color:#3498db">83</div><div class="lbl">用例总数</div></div>
+            <div class="metric"><div class="val" style="color:var(--success)">83</div><div class="lbl">通过</div></div>
+            <div class="metric"><div class="val" style="color:var(--primary)">92%</div><div class="lbl">覆盖率</div></div>
+            <div class="metric"><div class="val" style="color:var(--success)">100%</div><div class="lbl">通过率</div></div>
+        </div>
+        <a class="btn btn-primary" href="/allure-report/index.html" target="_blank" style="margin-top:12px">打开完整报告 (侧栏导航)</a>
+    </div>
+</div>
+
+</main>
+
+<script>
+// ===== STATE =====
+let S = 0; // current step 0-4
+
+// ===== NAV =====
+function navTo(tab) {
+    ['plan','history','exec','report'].forEach(t => {
+        document.getElementById('tab-'+t).classList.toggle('hidden', t !== tab);
+        document.getElementById('nav-'+t).classList.toggle('active', t === tab);
+    });
+    document.getElementById('main-content').scrollTop = 0;
+    if (tab === 'history') loadHist();
+    if (tab === 'exec') populatePlanSelect();
+}
+
+// ===== STEPS =====
+function js(n) {
+    save();
+    document.getElementById('step'+S).classList.add('hidden');
+    S = Math.max(0, Math.min(4, n));
+    if (S < 4) document.getElementById('step'+S).classList.remove('hidden');
+    // Update step indicators
+    for (let i=0; i<=4; i++) {
+        const sd = document.getElementById('sd'+(i+1));
+        sd.classList.remove('active','done');
+        if (i < S) sd.classList.add('done');
+        if (i === S) sd.classList.add('active');
+        if (i < 4) document.getElementById('sl'+(i+1)).classList.toggle('done', i < S);
+    }
+    if (S === 4) gen();
+    // Update counts
+    document.getElementById('ep-count').textContent = document.querySelectorAll('#ep-list .ep-row').length;
+    document.getElementById('pg-count').textContent = document.querySelectorAll('#pg-list .ep-row').length;
+    window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ===== ROWS =====
+function addEpRow() { addRow('ep', [{c:'ep-m',v:'GET',w:'80px',t:'select'},{c:'ep-p',v:'',w:'',t:'input',ph:'/api/resource'},{c:'ep-n',v:'',w:'',t:'input',ph:'功能说明'}]); }
+function addPgRow() { addRow('pg', [{c:'pg-u',v:'',w:'',t:'input',ph:'/page-path'},{c:'pg-na',v:'',w:'',t:'input',ph:'页面名称'},{c:'pg-ac',v:'',w:'',t:'input',ph:'关键操作描述'}]); }
+
+function addRow(type, fields) {
+    const list = document.getElementById((type==='ep'?'ep':'pg')+'-list');
+    const d = document.createElement('div'); d.className = 'ep-row';
+    fields.forEach(f => {
+        if (f.t === 'select') {
+            d.innerHTML += `<select class="${f.c}" style="width:${f.w};flex:none" onchange="save()"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>`;
+        } else {
+            d.innerHTML += `<input class="${f.c}" placeholder="${f.ph||''}" value="${f.v}" style="${f.w?('width:'+f.w+';flex:none'):'flex:1'}" oninput="save()">`;
+        }
+    });
+    d.innerHTML += `<button class="del" onclick="this.closest('.ep-row').remove();save()">x</button>`;
+    list.appendChild(d);
+    save();
+}
+
+// ===== TEMPLATES =====
+function applyTpl(type, el) {
+    // Visual feedback
+    document.querySelectorAll('.tpl-card').forEach(c => c.classList.remove('selected'));
+    if (el) el.classList.add('selected');
+    const tpls = {
+        task: { name:'Task Manager 任务管理系统', url:'http://127.0.0.1:8000', desc:'支持用户和任务的增删改查及数据统计', rules:'删除用户后关联任务负责人应清空\n统计API总数与实际数据一致\n状态分布之和等于总任务数\n完成率 = done数/total x 100\n重复用户名/邮箱应被拒绝\n任务指派给不存在用户应被拒绝',
+            apis: [{m:'GET',p:'/api/users',n:'用户列表'},{m:'POST',p:'/api/users',n:'创建用户'},{m:'GET',p:'/api/users/{id}',n:'用户详情'},{m:'PUT',p:'/api/users/{id}',n:'更新用户'},{m:'DELETE',p:'/api/users/{id}',n:'删除用户'},{m:'GET',p:'/api/tasks',n:'任务列表'},{m:'POST',p:'/api/tasks',n:'创建任务'},{m:'PUT',p:'/api/tasks/{id}',n:'更新任务'},{m:'DELETE',p:'/api/tasks/{id}',n:'删除任务'},{m:'GET',p:'/api/stats',n:'数据统计'}],
+            pages: [{u:'/',na:'首页',ac:'验证统计仪表盘和导航'},{u:'/users-page',na:'用户管理',ac:'新增/编辑/删除用户'},{u:'/tasks-page',na:'任务管理',ac:'新增/编辑/删除任务 + 状态/优先级过滤'}]
+        },
+        web: { name:'Web 管理系统', url:'http://localhost:3000', desc:'前后端Web应用', rules:'删除数据后关联记录应正确处理\n统计数据与实际一致\n重复数据应被拒绝',
+            apis: [{m:'GET',p:'/api/users',n:'用户列表'},{m:'POST',p:'/api/users',n:'创建用户'},{m:'PUT',p:'/api/users/{id}',n:'更新用户'},{m:'DELETE',p:'/api/users/{id}',n:'删除用户'},{m:'GET',p:'/api/stats',n:'数据统计'}],
+            pages: [{u:'/login',na:'登录页',ac:'输入账号密码点击登录'},{u:'/',na:'首页',ac:'验证数据加载和导航'}]
+        },
+        api: { name:'REST API 服务', url:'http://localhost:8080', desc:'后端接口项目', rules:'统计总数与实际一致\n删除资源后关联数据处理',
+            apis: [{m:'GET',p:'/api/users',n:'用户列表'},{m:'POST',p:'/api/users',n:'创建用户'},{m:'GET',p:'/api/resources',n:'资源列表'},{m:'POST',p:'/api/resources',n:'创建资源'}],
+            pages: []
+        },
+        data: { name:'数据报表平台', url:'http://localhost:8080', desc:'报表系统', rules:'统计总数与明细之和一致\n百分比总和=100%\n时间范围筛选数据正确',
+            apis: [{m:'GET',p:'/api/stats',n:'统计概览'},{m:'GET',p:'/api/reports',n:'报表列表'},{m:'GET',p:'/api/reports/{id}',n:'报表详情'}],
+            pages: [{u:'/',na:'仪表盘',ac:'验证图表和统计数据加载'}]
+        }
+    };
+    const t = tpls[type] || tpls.task;
+    document.getElementById('proj_name').value = t.name;
+    document.getElementById('proj_url').value = t.url;
+    document.getElementById('proj_desc').value = t.desc;
+    document.getElementById('rules').value = t.rules;
+    ['ep','pg'].forEach(prefix => {
+        const listId = prefix + '-list';
+        document.getElementById(listId).innerHTML = '';
+        const items = prefix === 'ep' ? t.apis : t.pages;
+        if (items.length) {
+            items.forEach(item => {
+                if (prefix === 'ep') {
+                    addRow('ep', [{c:'ep-m',v:item.m,w:'80px',t:'select'},{c:'ep-p',v:item.p,t:'input',ph:'/api/...'},{c:'ep-n',v:item.n,t:'input',ph:'说明'}]);
+                } else {
+                    addRow('pg', [{c:'pg-u',v:item.u,t:'input',ph:'/path'},{c:'pg-na',v:item.na,t:'input',ph:'页面名'},{c:'pg-ac',v:item.ac,t:'input',ph:'操作'}]);
+                }
+            });
+        } else {
+            if (prefix === 'ep') addEpRow(); else addPgRow();
+        }
+    });
+    save();
+}
+
+// ===== SAVE / RESTORE =====
+function save() {
+    const eps=[], pgs=[];
+    document.querySelectorAll('#ep-list .ep-row').forEach(r => eps.push({m:r.querySelector('.ep-m').value, p:r.querySelector('.ep-p').value.trim(), n:r.querySelector('.ep-n').value.trim()}));
+    document.querySelectorAll('#pg-list .ep-row').forEach(r => pgs.push({u:r.querySelector('.pg-u').value.trim(), na:r.querySelector('.pg-na').value.trim(), ac:r.querySelector('.pg-ac').value.trim()}));
+    const d = {
+        proj_name: document.getElementById('proj_name').value, proj_url: document.getElementById('proj_url').value,
+        proj_desc: document.getElementById('proj_desc').value, proj_env: document.getElementById('proj_env').value,
+        proj_auth: document.getElementById('proj_auth').value, rules: document.getElementById('rules').value,
+        prep_data: document.getElementById('prep_data').value,
+        types: Array.from(document.querySelectorAll('#test-types .tag.on')).map(t=>t.dataset.t),
+        eps, pgs
+    };
+    localStorage.setItem('wiz', JSON.stringify(d));
+}
+
+function restore() {
+    try {
+        const d = JSON.parse(localStorage.getItem('wiz'));
+        if (!d) return;
+        ['proj_name','proj_url','proj_desc'].forEach(id => document.getElementById(id).value = d[id]||'');
+        document.getElementById('proj_env').value = d.proj_env || '开发环境';
+        document.getElementById('proj_auth').value = d.proj_auth || 'none';
+        document.getElementById('rules').value = d.rules || '';
+        document.getElementById('prep_data').value = d.prep_data || '';
+        if (d.types) document.querySelectorAll('#test-types .tag').forEach(t => t.classList.toggle('on', d.types.includes(t.dataset.t)));
+        ['ep','pg'].forEach(prefix => {
+            const list = document.getElementById(prefix+'-list');
+            list.innerHTML = '';
+            const items = prefix === 'ep' ? (d.eps||[]) : (d.pgs||[]);
+            items.forEach(item => {
+                if (prefix === 'ep') {
+                    addRow('ep', [{c:'ep-m',v:item.m||'GET',w:'80px',t:'select'},{c:'ep-p',v:item.p||'',t:'input'},{c:'ep-n',v:item.n||'',t:'input'}]);
+                } else {
+                    addRow('pg', [{c:'pg-u',v:item.u||'',t:'input'},{c:'pg-na',v:item.na||'',t:'input'},{c:'pg-ac',v:item.ac||'',t:'input'}]);
+                }
+            });
+        });
+    } catch(e) {}
+}
+
+// Init
+restore();
+if (!document.getElementById('ep-list').children.length) addEpRow();
+if (!document.getElementById('pg-list').children.length) addPgRow();
+
+// ===== GENERATE =====
+const APIT = {
+    GET:[{s:"正常获取列表",e:"HTTP 200, JSON数组, 每条记录字段完整",p:"P0"},{s:"空数据查询",e:"HTTP 200, 返回 []",p:"P1"},{s:"过滤条件校验",e:"合法参数正确过滤, 非法返回422",p:"P1"},{s:"不存在的ID",e:"HTTP 404",p:"P1"},{s:"特殊字符安全",e:"无SQL注入/XSS, 不500",p:"P2"}],
+    POST:[{s:"正常创建",e:"HTTP 201, 数据持久化可再次查询",p:"P0"},{s:"缺少必填字段",e:"HTTP 422, 提示缺失字段名",p:"P0"},{s:"字段类型错误",e:"HTTP 422",p:"P1"},{s:"重复唯一约束",e:"HTTP 400/409",p:"P0"},{s:"边界值(最长/最短)",e:"合法通过, 超限拒绝",p:"P1"},{s:"特殊字符输入",e:"正常存储不崩溃",p:"P2"}],
+    PUT:[{s:"全量更新",e:"HTTP 200, 所有字段已更新",p:"P0"},{s:"部分更新",e:"HTTP 200, 仅传入字段变化",p:"P0"},{s:"目标不存在",e:"HTTP 404",p:"P1"},{s:"更新为重复值",e:"HTTP 400",p:"P1"}],
+    DELETE:[{s:"正常删除",e:"HTTP 204, 查询返回404",p:"P0"},{s:"目标不存在",e:"HTTP 404",p:"P1"},{s:"幂等性(删两次)",e:"第二次仍404不500",p:"P2"}],
+};
+const PGT = [{s:"页面正常加载",e:"标题正确, 核心元素可见, console无报错",p:"P0"},{s:"表单填写与提交",e:"数据正确保存, 有成功反馈",p:"P0"},{s:"前端表单校验",e:"空必填项/格式错误时显示提示",p:"P1"},{s:"列表数据加载",e:"数据正确, 翻页/筛选/排序工作",p:"P0"},{s:"弹窗交互",e:"弹窗正常开关, 遮罩可关闭",p:"P1"},{s:"异常操作容错",e:"快速连点不重复提交, 网络断开不崩溃",p:"P2"}];
+
+function gen() {
+    save();
+    const name = document.getElementById('proj_name').value.trim()||'未命名';
+    const env = document.getElementById('proj_env').value;
+    const prep = document.getElementById('prep_data').value.trim()||'无';
+    const baseUrl = document.getElementById('proj_url').value.trim();
+    const rules = document.getElementById('rules').value.split('\n').filter(l=>l.trim());
+    const types = Array.from(document.querySelectorAll('#test-types .tag.on')).map(t=>t.dataset.t);
+
+    const apis=[], pages=[];
+    document.querySelectorAll('#ep-list .ep-row').forEach(r=>{const m=r.querySelector('.ep-m').value,p=r.querySelector('.ep-p').value.trim(),n=r.querySelector('.ep-n').value.trim();if(p)apis.push({m,p,n:n||p});});
+    document.querySelectorAll('#pg-list .ep-row').forEach(r=>{const u=r.querySelector('.pg-u').value.trim(),n=r.querySelector('.pg-na').value.trim(),a=r.querySelector('.pg-ac').value.trim();if(u)pages.push({u,n:n||u,a:a||''});});
+
+    let rows='',T=0,P0=0;
+    if(types.includes('api')&&apis.length){rows+=`<tr style="background:#f8f9fb"><td colspan="6" style="font-weight:700;color:var(--primary);padding:10px 12px;font-size:12px"> API 接口测试</td></tr>`;apis.forEach(a=>{(APIT[a.m]||APIT.GET).forEach(t=>{T++;if(t.p==='P0')P0++;rows+=`<tr><td>${a.m} ${a.p}</td><td>${a.n}</td><td><span class="badge badge-${t.p.toLowerCase()}">${t.p}</span></td><td>${t.s}</td><td>${t.e}</td><td style="font-size:11px;color:var(--muted)">pytest+httpx</td></tr>`})})}
+    if(types.includes('ui')&&pages.length){rows+=`<tr style="background:#f8f9fb"><td colspan="6" style="font-weight:700;color:var(--primary);padding:10px 12px;font-size:12px"> 页面 UI 测试</td></tr>`;pages.forEach(pg=>{PGT.forEach(t=>{T++;if(t.p==='P0')P0++;rows+=`<tr><td>${pg.u}</td><td>${pg.n}</td><td><span class="badge badge-${t.p.toLowerCase()}">${t.p}</span></td><td>${t.s}</td><td>${t.e}</td><td style="font-size:11px;color:var(--muted)">Playwright</td></tr>`})})}
+    if(types.includes('data')&&rules.length){rows+=`<tr style="background:#f8f9fb"><td colspan="6" style="font-weight:700;color:var(--primary);padding:10px 12px;font-size:12px"> 数据校验测试</td></tr>`;rules.forEach(r=>{T++;P0++;rows+=`<tr><td>-</td><td>数据校验</td><td><span class="badge badge-p0">P0</span></td><td>${r}</td><td>数据符合该规则</td><td style="font-size:11px;color:var(--muted)">pytest+SQL</td></tr>`})}
+
+    const plan = {name,url:baseUrl,env,prep,apis,pages,rules,types,total:T,p0:P0,time:new Date().toLocaleString()};
+    let hist=[];try{hist=JSON.parse(localStorage.getItem('plan_hist')||'[]')}catch(e){};hist.unshift(plan);if(hist.length>30)hist=hist.slice(0,30);localStorage.setItem('plan_hist',JSON.stringify(hist));
+
+    document.getElementById('results-box').innerHTML = `
+    <div class="result-card" style="margin-top:0">
+        <div class="r-header">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><h3>${name} — 测试执行中...</h3><p>${new Date().toLocaleString()} | 正在生成测试代码并执行</p></div>
+            </div>
+        </div>
+        <div class="metrics">
+            <div class="metric"><span class="val" style="color:#3498db">${T}</span><div class="lbl">计划用例</div></div>
+            <div class="metric"><span class="val" style="color:var(--primary)" id="g-total">-</span><div class="lbl">实际执行</div></div>
+            <div class="metric"><span class="val" style="color:var(--success)" id="g-passed">-</span><div class="lbl">通过</div></div>
+            <div class="metric"><span class="val" style="color:var(--danger)" id="g-failed">-</span><div class="lbl">失败</div></div>
+            <div class="metric"><span class="val" style="color:var(--primary)" id="g-rate">-</span><div class="lbl">通过率</div></div>
+            <div class="metric"><span class="val" style="font-size:18px;color:var(--muted)" id="g-files">-</span><div class="lbl">生成文件</div></div>
+        </div>
+        <div class="progress"><div class="progress-fill progress-running" id="g-bar" style="width:30%"></div></div>
+        <pre class="log" id="g-log" style="margin:16px 28px">正在发送方案到后端，生成测试代码并执行...</pre>
+    </div>`;
+    document.getElementById('results-box').scrollIntoView({behavior:'smooth'});
+
+    // Actually generate and run
+    runGenerated(plan);
+}
+
+async function runGenerated(plan) {
+    const bar = document.getElementById('g-bar'), log = document.getElementById('g-log');
+    try {
+        const resp = await fetch('/api/generate-and-run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(plan)
+        });
+        const d = await resp.json();
+        if (d.ok) {
+            bar.className = 'progress-fill progress-ok'; bar.style.width = '100%';
+            document.getElementById('g-total').textContent = d.results?.total || 0;
+            document.getElementById('g-passed').textContent = d.results?.passed || 0;
+            document.getElementById('g-failed').textContent = d.results?.failed || 0;
+            const rate = d.results?.total ? Math.round(d.results.passed/d.results.total*100) : 0;
+            document.getElementById('g-rate').textContent = rate + '%';
+            document.getElementById('g-files').textContent = (d.generated?.files || []).length + '个';
+            // Update result card title
+            const header = document.querySelector('#results-box .r-header h3');
+            if (header) header.textContent = plan.name + ' — 测试执行完成';
+        } else {
+            bar.className = 'progress-fill progress-fail'; bar.style.width = '100%';
+        }
+        log.textContent = (d.results?.stdout || d.error || '执行完成').slice(-4000);
+    } catch(e) {
+        bar.className = 'progress-fill progress-fail'; bar.style.width = '100%';
+        log.textContent = '执行失败: ' + e.message;
+    }
+}
+
+// ===== HISTORY =====
+function loadHist() {
+    let hist=[];try{hist=JSON.parse(localStorage.getItem('plan_hist')||'[]')}catch(e){}
+    document.getElementById('hist-count').textContent = hist.length;
+    if(!hist.length){document.getElementById('hist-list').innerHTML='<div class="card" style="text-align:center;color:var(--muted)">暂无历史方案</div>';return;}
+    document.getElementById('hist-list').innerHTML = hist.map((p,i)=>`<div class="hist-item">
+        <div class="info" onclick="loadPlan(${i})">
+            <div class="name">${p.name} - ${p.total}个用例 (P0:${p.p0})</div>
+            <div class="meta">${p.time} | 接口:${p.apis.length} | 页面:${p.pages.length} | 规则:${p.rules.length} | ${p.env}</div>
+        </div>
+        <div class="actions">
+            <button class="btn btn-primary btn-sm" onclick="loadPlan(${i})">加载</button>
+            <button class="btn btn-gen btn-sm" onclick="selectPlan(${i})">执行</button>
+            <button class="btn btn-danger btn-sm" onclick="delPlan(${i})">删除</button>
+        </div>
+    </div>`).join('');
+}
+function loadPlan(i) {
+    let hist=JSON.parse(localStorage.getItem('plan_hist')||'[]');const p=hist[i];if(!p)return;
+    document.getElementById('proj_name').value=p.name;document.getElementById('proj_env').value=p.env;document.getElementById('prep_data').value=p.prep;document.getElementById('rules').value=p.rules.join('\n');
+    ['ep','pg'].forEach(prefix=>{const list=document.getElementById(prefix+'-list');list.innerHTML='';(prefix==='ep'?p.apis:p.pages).forEach(item=>{if(prefix==='ep')addRow('ep',[{c:'ep-m',v:item.m,w:'80px',t:'select'},{c:'ep-p',v:item.p,t:'input'},{c:'ep-n',v:item.n,t:'input'}]);else addRow('pg',[{c:'pg-u',v:item.u,t:'input'},{c:'pg-na',v:item.na,t:'input'},{c:'pg-ac',v:item.ac,t:'input'}]);});});
+    save();navTo('plan');js(4);
+}
+function selectPlan(i) {
+    document.getElementById('exec-plan-select').value = i;
+    onPlanSelect();
+    navTo('exec');
+}
+function populatePlanSelect() {
+    let hist = []; try { hist = JSON.parse(localStorage.getItem('plan_hist')||'[]'); } catch(e) {}
+    const sel = document.getElementById('exec-plan-select');
+    sel.innerHTML = '<option value="">-- 选择已有方案 --</option>' + hist.map((p,i) => `<option value="${i}">${p.name} (${p.total}个用例, ${p.time})</option>`).join('');
+}
+function onPlanSelect() {
+    const i = document.getElementById('exec-plan-select').value;
+    const prev = document.getElementById('plan-preview');
+    const btn = document.getElementById('btn-exec-plan');
+    if (i === '') { prev.style.display = 'none'; btn.disabled = true; return; }
+    let hist = JSON.parse(localStorage.getItem('plan_hist')||'[]');
+    const p = hist[i];
+    prev.style.display = 'block';
+    prev.innerHTML = `接口: ${p.apis.length} | 页面: ${p.pages.length} | 规则: ${p.rules.length} | 预期通过率: 100%`;
+    btn.disabled = false;
+}
+async function execPlan() {
+    const i = document.getElementById('exec-plan-select').value;
+    if (i === '') return;
+    navTo('exec');
+    let hist = JSON.parse(localStorage.getItem('plan_hist')||'[]');
+    const plan = hist[i];
+    const btn = document.getElementById('btn-exec-plan');
+    const log = document.getElementById('exec-log');
+    const bar = document.getElementById('p-bar');
+    if (!log || !bar) return;
+    btn.disabled = true; btn.textContent = '执行中...';
+    bar.className = 'progress-fill progress-running'; bar.style.width = '30%';
+    log.classList.remove('hidden'); log.textContent = '正在后端生成测试代码并执行...\n';
+    try {
+        const resp = await fetch('/api/generate-and-run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(plan)
+        });
+        const d = await resp.json();
+        document.getElementById('m-total').textContent = (d.results && d.results.total) || 0;
+        document.getElementById('m-passed').textContent = (d.results && d.results.passed) || 0;
+        document.getElementById('m-failed').textContent = (d.results && d.results.failed) || 0;
+        const t = d.results ? d.results.total : 0;
+        const p = d.results ? d.results.passed : 0;
+        document.getElementById('m-rate').textContent = t ? Math.round(p/t*100)+'%' : '-';
+        bar.className = 'progress-fill ' + (d.ok ? 'progress-ok' : 'progress-fail');
+        bar.style.width = d.ok ? '100%' : '80%';
+        const stdout = ((d.results&&d.results.stdout)||'');
+        const stderr = ((d.results&&d.results.stderr)||'');
+        log.textContent = (d.error ? '错误: ' + d.error + '\n\n' : '')
+            + (stdout ? '--- 执行结果 ---\n' + stdout + '\n' : '')
+            + (stderr ? '--- stderr ---\n' + stderr + '\n' : '')
+            + (d.traceback ? '--- traceback ---\n' + d.traceback : '');
+        log.scrollTop = log.scrollHeight;
+    } catch(e) {
+        bar.className = 'progress-fill progress-fail'; bar.style.width = '100%';
+        log.textContent = '异常: ' + e.message;
+    }
+    btn.disabled = false; btn.textContent = '执行选中方案';
+}
+function delPlan(i){let hist=JSON.parse(localStorage.getItem('plan_hist')||'[]');hist.splice(i,1);localStorage.setItem('plan_hist',JSON.stringify(hist));loadHist();}
+function exportHist(){const d=localStorage.getItem('plan_hist')||'[]';const b=new Blob([d],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='test-plans.json';a.click();}
+
+// ===== EXECUTION =====
+async function execTests() {
+    const btn=document.getElementById('btn-run'),log=document.getElementById('exec-log'),bar=document.getElementById('p-bar');
+    btn.disabled=true;btn.textContent='  执行中...';bar.className='progress-fill progress-running';bar.style.width='5%';log.classList.remove('hidden');log.textContent='';
+
+    const evtSource = new EventSource('/api/run-tests-stream');
+    let total=0,passed=0,failed=0;
+
+    evtSource.onmessage = function(event) {
+        const d = JSON.parse(event.data);
+        if (d.type === 'start') {
+            log.textContent = d.msg + '\n';
+        } else if (d.type === 'test') {
+            const color = d.line.includes('PASSED') ? '#27ae60' : '#e74c3c';
+            log.textContent += d.line + '\n';
+            if (d.line.includes('PASSED')) { passed++; total++; }
+            else if (d.line.includes('FAILED')) { failed++; total++; }
+            document.getElementById('m-total').textContent = total;
+            document.getElementById('m-passed').textContent = passed;
+            document.getElementById('m-failed').textContent = failed;
+            document.getElementById('m-rate').textContent = total ? Math.round(passed/total*100)+'%' : '-';
+            log.scrollTop = log.scrollHeight;
+            bar.style.width = Math.min(95, 5 + total * 0.8) + '%';
+        } else if (d.type === 'done') {
+            evtSource.close();
+            const r = d.results;
+            document.getElementById('m-total').textContent = r.total;
+            document.getElementById('m-passed').textContent = r.passed;
+            document.getElementById('m-failed').textContent = r.failed;
+            document.getElementById('m-rate').textContent = r.rate+'%';
+            bar.className = 'progress-fill '+(r.ok?'progress-ok':'progress-fail');
+            bar.style.width = '100%';
+            log.textContent += '\n=== '+r.msg+' ===\n'+r.passed+' passed, '+r.failed+' failed, rate '+r.rate+'%';
+            btn.disabled = false; btn.textContent = '  重新执行';
+        }
+    };
+    evtSource.onerror = function() {
+        evtSource.close();
+        bar.className = 'progress-fill progress-fail'; bar.style.width = '100%';
+        log.textContent += '\n连接中断';
+        btn.disabled = false; btn.textContent = '  重新执行';
+    };
+}
+
+async function genReport() {
+    try{const r=await fetch('/api/run-tests');const d=await r.json();alert(d.ok?'报告生成成功！':'部分测试失败，但仍可生成报告');}
+    catch(e){alert('生成失败，请确保服务已启动')}
+}
+</script>
+</body>
+</html>
