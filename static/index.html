@@ -540,133 +540,19 @@ function previewCases() {
     if (!apis.length && !pgs.length) { alert('请先添加 API 接口或 Web 页面'); return; }
     window._previewApis = apis; window._previewPgs = pgs;
     window._previewName = name;
-    window._lockedCases = window._lockedCases || [];  // persist locks across regenerations
-    document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:24px;color:#5c6bc0;font-size:13px"><span id="ai-progress-text">🤖 AI 正在分析 API 结构...</span><br><span id="ai-progress-dots" style="font-size:20px;letter-spacing:4px"></span></td></tr>';
-    document.getElementById('case-preview-title').textContent = '用例预览 (生成中...)';
+    window._lockedCases = window._lockedCases || [];
+    // Build gen_code-exact preview (same formula as what will execute)
+    const methodTests = {GET:[{t:'可达性',pre:'服务运行中',exp:'HTTP 200/301/302/304'},{t:'响应体验证',pre:'无',exp:'响应体>0'},{t:'Content-Type',pre:'无',exp:'含content-type'},{t:'响应时间',pre:'网络通畅',exp:'<5秒'},{t:'HEAD请求',pre:'支持HEAD',exp:'<500'},{t:'分页参数',pre:'支持page',exp:'<500'},{t:'移动端UA',pre:'无',exp:'iPhone UA<500'},{t:'JSON Accept',pre:'无',exp:'<500'}],POST:[{t:'正常提交',pre:'无',exp:'<500'},{t:'空请求体',pre:'接口接收空body',exp:'<500'},{t:'非法JSON',pre:'接口解析JSON',exp:'<500'},{t:'Form表单',pre:'接收form-data',exp:'<500'}],PUT:[{t:'正常更新',pre:'无',exp:'<500'},{t:'空请求体',pre:'接口接收空body',exp:'<500'}],DELETE:[{t:'删除请求',pre:'资源存在',exp:'<500'}],PATCH:[{t:'部分更新',pre:'无',exp:'<500'},{t:'空请求体',pre:'接口接收空body',exp:'<500'}],HEAD:[{t:'HEAD可达',pre:'支持HEAD',exp:'<500'},{t:'响应头',pre:'无',exp:'headers非空'}]};
+    const uiTests=[{t:'页面加载',pre:'公网可访问',exp:'body可见,title非空'},{t:'JS无错误',pre:'无',exp:'无pageerror'},{t:'加载时间',pre:'网络<10s',exp:'<10秒'},{t:'移动端',pre:'无',exp:'375x812正常'},{t:'导航链接',pre:'有a标签',exp:'links>0'},{t:'静态资源',pre:'无',exp:'无4xx/5xx'}];
+    const unitNames=['服务可达性','响应时间基准','SSL证书','重定向跟踪','响应头完整','响应体大小','编码声明','并发请求'];
+    let rows='',num=0,priColor={P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0'};
+    apis.forEach((a,ai)=>{const tests=methodTests[a.m]||[{t:'可达性',pre:'服务运行中',exp:'<500'}];const ep=(a.p||'')==='/'||/\b(login|auth)\b/.test(a.p||'')?'P0':'P1';tests.forEach((t,ti)=>{num++;const pri=ti===0?ep:'P1';rows+=`<tr style="border-bottom:1px solid #eee"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="api_${ai}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock" data-key="a_${ai}_${ti}" onclick="toggleLock(this,'a_${ai}_${ti}')">🔓</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">${a.n||a.p}-${t.t}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[pri]};padding:6px 4px">${pri}</td><td style="font-size:10px;padding:6px 4px">${t.pre}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${a.m}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${a.p}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${t.exp}</td><td style="font-size:10px;padding:6px 4px">${a.m} ${a.p}</td><td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`})});
+    pgs.forEach((p,pi)=>{uiTests.forEach(t=>{num++;rows+=`<tr style="border-bottom:1px solid #eee"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="pg_${pi}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock" data-key="pg_${pi}_${num}" onclick="toggleLock(this,'pg_${pi}_${num}')">🔓</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">[UI] ${p.na}: ${t.t}</td><td style="font-size:10px;font-weight:600;color:#26a69a;padding:6px 4px">UI</td><td style="font-size:11px;font-weight:700;color:${priColor.P1};padding:6px 4px">P1</td><td style="font-size:10px;padding:6px 4px">${t.pre}</td><td style="font-family:monospace;font-size:10px;color:#26a69a;padding:6px 4px">GET</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${p.u}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${t.exp}</td><td style="font-size:10px;padding:6px 4px">page.goto ${p.u}</td><td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`})});
+    unitNames.forEach(t=>{num++;rows+=`<tr style="border-bottom:1px solid #eee"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="unit" checked></td><td style="padding:4px;text-align:center;font-size:14px">🔓</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">[Unit] ${t}</td><td style="font-size:10px;font-weight:600;color:#888;padding:6px 4px">Unit</td><td style="font-size:11px;font-weight:700;color:#888;padding:6px 4px">P1</td><td style="font-size:10px;padding:6px 4px">服务运行中</td><td style="font-family:monospace;font-size:10px;color:#888;padding:6px 4px">-</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">-</td><td style="font-size:10px;color:#27ae60;padding:6px 4px"><500</td><td style="font-size:10px;padding:6px 4px">httpx.get(B)</td><td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`});
+    document.getElementById('case-preview-list').innerHTML = rows;
+    document.getElementById("case-preview-title").textContent = "用例预览 (" + num + " 条)";
     document.getElementById('case-preview').classList.remove('hidden');
     document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
-    // Animated progress
-    let _dots = 0;
-    const _progressTimer = setInterval(() => {
-        _dots = (_dots + 1) % 4;
-        const el = document.getElementById('ai-progress-dots');
-        if (el) el.textContent = '.'.repeat(_dots + 1);
-        const pt = document.getElementById('ai-progress-text');
-        if (pt && _dots === 0) pt.textContent = '🤖 AI 正在生成测试用例...';
-        else if (pt && _dots === 2) pt.textContent = '🤖 AI 正在优化用例内容...';
-    }, 600);
-    // Fetch AI suggestions with random seed for variation each regeneration
-    // Save locked row HTML before regenerating
-    const lockedRows = {};
-    document.querySelectorAll('.pv-lock.locked').forEach(el => {
-        const row = el.closest('tr');
-        if (row) {
-            const key = el.dataset.key || '';
-            lockedRows[key] = {html: row.innerHTML, bg: row.style.background};
-        }
-    });
-    const seed = Date.now() % 10000;
-    // Send AI config along with APIs
-    const aiCfg = {model: '', base_url: ''};
-    try { const c = JSON.parse(localStorage.getItem('ai_profiles')||'[]');
-        const activeId = localStorage.getItem('ai_active');
-        const active = c.find(x=>x.id===activeId) || c[0] || {};
-        aiCfg.model = active.model || '';
-        aiCfg.base_url = active.base_url || '';
-    } catch(e) {}
-    fetch('/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apis, pages:pgs, seed, model:aiCfg.model, base_url:aiCfg.base_url})})
-    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
-        clearInterval(_progressTimer);
-        const suggestions = d.suggestions||[];
-        window._previewSuggestions = suggestions;
-        let rows = '', num = 0;
-        const priColor = {P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0',P3:'#888'};
-        const stepTemplates = ['发送 {m} {p}','发送 {m} {p}，验证状态码','发送 {m} {p}，解析响应体验证','构造请求 → 发送 {m} {p} → 断言结果'];
-        const dataTemplates = ['无','正常业务数据','{"key":"value"}','边界值测试','空值/null'];
-        suggestions.forEach((s, i) => {
-            num++;
-            const step = stepTemplates[i % stepTemplates.length].replace('{m}',s.method).replace('{p}',s.path);
-            const tdata = (i % 3 === 0) ? dataTemplates[i % dataTemplates.length] : '无';
-            const lk = window._lockedCases && window._lockedCases.includes('s_'+i);
-            rows += `<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}">
-                <td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td>
-                <td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td>
-                <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
-                <td style="padding:6px 4px;font-size:11px">${name}</td>
-                <td style="font-weight:600;padding:6px 4px">${s.title}</td>
-                <td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td>
-                <td style="font-size:11px;font-weight:700;color:${priColor[s.priority]};padding:6px 4px">${s.priority}</td>
-                <td style="font-size:10px;padding:6px 4px">${s.precondition}</td>
-                <td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td>
-                <td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td>
-                <td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td>
-                <td style="font-size:10px;padding:6px 4px">${s.steps||step}</td>
-                <td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||tdata}</td></tr>`;
-        });
-        // Add UI tests for pages
-        pgs.forEach((p, pi) => {
-            const pp = p.u === '/' || p.u === '' ? 'P0' : 'P1';
-            [{title:'页面加载渲染',pre:'页面可公网访问',exp:'body可见, title非空',pri:pp,stp:'打开'+p.u+'，等待load事件'},
-             {title:'控制台无JS错误',pre:'无',exp:'无pageerror事件',pri:'P1',stp:'打开页面，监听console.error'},
-             {title:'加载时间<10s',pre:'网络延迟<10s',exp:'加载时间<10秒',pri:'P2',stp:'计时打开页面至networkidle'},
-             {title:'移动端适配',pre:'无',exp:'375x812视口正常',pri:'P2',stp:'设置viewport 375x812后打开页面'},
-             {title:'页面导航元素',pre:'页面含超链接',exp:'至少1个a标签',pri:'P2',stp:'打开页面, page.locator("a").count()'},
-             {title:'静态资源加载',pre:'无',exp:'无4xx/5xx请求',pri:'P1',stp:'打开页面, 监听response事件收集4xx'},
-            ].forEach(t => {
-                num++;
-                const lk = window._lockedCases && window._lockedCases.includes('pg_'+pi+'_'+num);
-                rows += `<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}">
-                    <td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="pg_${pi}" checked></td>
-                    <td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" onclick="toggleLock(this,'pg_${pi}_${num}')">${lk?'🔒':'🔓'}</td>
-                    <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
-                    <td style="padding:6px 4px;font-size:11px">${name}</td>
-                    <td style="font-weight:600;padding:6px 4px">[UI] ${p.na}: ${t.title}</td>
-                    <td style="font-size:10px;font-weight:600;color:#26a69a;padding:6px 4px">UI</td>
-                    <td style="font-size:11px;font-weight:700;color:${priColor[t.pri]};padding:6px 4px">${t.pri}</td>
-                    <td style="font-size:10px;padding:6px 4px">${t.pre}</td>
-                    <td style="font-family:monospace;font-size:10px;color:#26a69a;padding:6px 4px">GET</td>
-                    <td style="font-family:monospace;font-size:10px;padding:6px 4px">${p.u}</td>
-                    <td style="font-size:10px;color:#27ae60;padding:6px 4px">${t.exp}</td>
-                    <td style="font-size:10px;padding:6px 4px">${t.stp}</td>
-                    <td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`;
-            });
-        });
-        // Add 8 unit tests (always generated by gen_code)
-        const unitTests = ['服务可达性','响应时间基准','SSL证书有效','重定向跟踪','响应头完整','响应体大小','编码声明检查','并发请求(3线程)'];
-        unitTests.forEach((t,i) => {
-            num++;
-            rows += `<tr style="border-bottom:1px solid #eee">
-                <td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="unit_${i}" checked></td>
-                <td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock" data-key="unit_${i}" onclick="toggleLock(this,'unit_${i}')">🔓</td>
-                <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
-                <td style="padding:6px 4px;font-size:11px">${name}</td>
-                <td style="font-weight:600;padding:6px 4px">[Unit] ${t}</td>
-                <td style="font-size:10px;font-weight:600;color:#888;padding:6px 4px">Unit</td>
-                <td style="font-size:11px;font-weight:700;color:#888;padding:6px 4px">P1</td>
-                <td style="font-size:10px;padding:6px 4px">服务运行中</td>
-                <td style="font-family:monospace;font-size:10px;color:#888;padding:6px 4px">GET</td>
-                <td style="font-family:monospace;font-size:10px;padding:6px 4px">/</td>
-                <td style="font-size:10px;color:#27ae60;padding:6px 4px">HTTP状态码<500</td>
-                <td style="font-size:10px;padding:6px 4px">httpx.get(B)</td>
-                <td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`;
-        });
-        document.getElementById('case-preview-list').innerHTML = rows;
-        // Restore locked rows
-        Object.keys(lockedRows).forEach(key => {
-            const el = document.querySelector('.pv-lock[data-key="' + key + '"]');
-            if (el) {
-                const row = el.closest('tr');
-                if (row && lockedRows[key].html) {
-                    row.innerHTML = lockedRows[key].html;
-                    row.style.background = '#fffde7';
-                }
-            }
-        });
-        document.getElementById("case-preview-title").textContent = "用例预览";
-    }).catch(e=>{
-        clearInterval(_progressTimer);
-        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
-    });
 }
 function toggleAllLocks() {
     const locks = document.querySelectorAll('.pv-lock');
@@ -768,19 +654,19 @@ async function _runGenerate(plan) {
     }
 }
 async function savePreviewed() {
-    const suggestions = window._previewSuggestions||[];
-    if (!suggestions.length) { alert('没有可保存的用例，请先生成预览'); return; }
-    // Build plan with individual test cases as APIs
+    const apis = window._previewApis||[];
+    const pgs = window._previewPgs||[];
+    if (!apis.length && !pgs.length) { alert('没有可保存的用例'); return; }
     const plan = {
         name: window._previewName||'未命名',
         url: document.getElementById("p-url").value.trim()||'http://localhost',
-        apis: suggestions.map(s => ({m:s.method||'GET', p:s.path||'/', n:s.title||s.path})),
-        pages: window._previewPgs||[],
+        apis: apis,
+        pages: pgs,
     };
     try {
         const r = await fetch('/api/save-tc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
         const d = await r.json();
-        alert('新增 ' + (d.added||0) + ' 条用例（总计' + (d.total||0) + '条，' + ((suggestions.length - (d.added||0))||0) + '条已存在）');
+        alert('新增 ' + (d.added||0) + ' 条，总计 ' + (d.total||0) + ' 条');
     } catch(e) { alert('保存失败: ' + e.message); }
 }
 let _tcs = [];
