@@ -836,6 +836,14 @@ tr:hover td{{background:#fafbff}}.hidden{{display:none}}</style></head><body>
 
 @app.get("/api/report")
 def report(dir: str = ""):
+    try:
+        return _build_report(dir)
+    except Exception as ex:
+        logger.error(f"Report crash: {ex}", exc_info=True)
+        return HTMLResponse(f"<body style='font-family:sans-serif;text-align:center;padding:80px;color:#888'><h2>Report Error</h2><p>{html.escape(str(ex)[:200])}</p></body>")
+
+
+def _build_report(dir: str):
     if dir:
         dir = safe(dir)  # Prevent path traversal
         xml_path = os.path.join(GEN, dir, "results.xml")
