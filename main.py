@@ -624,35 +624,36 @@ def _attach_existing(pid, proc, plan):
     threading.Thread(target=w, daemon=True).start()
 
     async def s():
-        yield f"id: {pid}\ndata: {json.dumps({'t':'start','msg':'reconnected'})}\n\n"
-        _heartbeat = 0
-        _deadline = datetime.now().timestamp() + 600
-        while True:
-            if datetime.now().timestamp() > _deadline:
-                yield f"data: {json.dumps({'t':'error','msg':'Execution timeout'})}\n\n"
-                break
-            try:
-                line = await asyncio.to_thread(q.get, timeout=0.1)
-            except queue.Empty:
-                _heartbeat += 1
-                if _heartbeat % 20 == 0:
-                    yield ": keepalive\n\n"
-                await asyncio.sleep(0.05)
-                continue
-            if line == "__END__":
-                rate = round(P[0]/T[0]*100,1) if T[0] else 0
-                RUN_PROCS.pop(pid, None)
-                PLANS.pop(pid, None)
-                yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
-                break
-            st = line.strip()
-            if "PASSED" in st and "::" in st:
-                T[0] += 1; P[0] += 1
-            elif "FAILED" in st and "::" in st:
-                T[0] += 1; F[0] += 1
-            elif "ERROR" in st and "::" in st:
-                T[0] += 1; E[0] += 1
-            yield f"data: {json.dumps({'t':'test','line':st[-300:]})}\n\n"
+        try:
+            yield f"id: {pid}\ndata: {json.dumps({'t':'start','msg':'reconnected'})}\n\n"
+            _heartbeat = 0
+            _deadline = datetime.now().timestamp() + 600
+            while True:
+                if datetime.now().timestamp() > _deadline:
+                    yield f"data: {json.dumps({'t':'error','msg':'Execution timeout'})}\n\n"
+                    break
+                try:
+                    line = await asyncio.to_thread(q.get, timeout=0.1)
+                except queue.Empty:
+                    _heartbeat += 1
+                    if _heartbeat % 20 == 0:
+                        yield ": keepalive\n\n"
+                    await asyncio.sleep(0.05)
+                    continue
+                if line == "__END__":
+                    rate = round(P[0]/T[0]*100,1) if T[0] else 0
+                    RUN_PROCS.pop(pid, None)
+                    PLANS.pop(pid, None)
+                    yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
+                    break
+                st = line.strip()
+                if "PASSED" in st and "::" in st:
+                    T[0] += 1; P[0] += 1
+                elif "FAILED" in st and "::" in st:
+                    T[0] += 1; F[0] += 1
+                elif "ERROR" in st and "::" in st:
+                    T[0] += 1; E[0] += 1
+                yield f"data: {json.dumps({'t':'test','line':st[-300:]})}\n\n"
         finally:
             RUN_PROCS.pop(pid, None)
             PLANS.pop(pid, None)
