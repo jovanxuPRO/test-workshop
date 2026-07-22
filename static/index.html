@@ -350,7 +350,7 @@ async function generate() {
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
     const safePlan = {name: plan.name, url: plan.url, time: plan.time};
     hist.unshift(safePlan); if (hist.length > 20) hist = hist.slice(0,20); try { localStorage.setItem("plan_hist", JSON.stringify(hist)); } catch(e) {}
-    const escName = plan.name.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    const escName = (plan.name||'').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     let activeEvt = null;
 
     document.getElementById("results").classList.remove("hidden");
