@@ -1309,9 +1309,10 @@ API:
             # No array — try to create one from loose objects
             text = "[" + text + "]"
         import json as _j, re
-        # Strip JSON-invalid comments (AI often adds // comments)
-        text = re.sub(r'//[^\n]*', '', text)  # Remove // single-line comments
-        text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)  # Remove /* block comments */
+        # Strip comments only outside of quoted strings
+        # Remove lines that start with optional whitespace + //
+        text = re.sub(r'^\s*//[^\n]*\n', '\n', text, flags=re.MULTILINE)
+        text = re.sub(r'\n\s*//[^\n]*', '', text)
         # Progressive fixes
         try:
             return _j.loads(text)
