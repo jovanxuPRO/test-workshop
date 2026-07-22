@@ -1309,23 +1309,29 @@ API:
             # No array — try to create one from loose objects
             text = "[" + text + "]"
         import json as _j, re
-        # Strip comments only outside of quoted strings
-        # Remove lines that start with optional whitespace + //
+        # Strip comments only at line starts
         text = re.sub(r'^\s*//[^\n]*\n', '\n', text, flags=re.MULTILINE)
-        text = re.sub(r'\n\s*//[^\n]*', '', text)
-        # Progressive fixes
+        # Progressive parse: try full array first, then individual objects
         try:
-            return _j.loads(text)
-        except _j.JSONDecodeError as je:
-            # Fix 1: trailing commas
-            text = re.sub(r',\s*([}\]])', r'\1', text)
-            try: return _j.loads(text)
-            except _j.JSONDecodeError:
-                # Fix 2: unescaped control chars in strings
-                text = re.sub(r'(?<=[^\\])\\(?!["\\/bfnrtu])', r'\\\\', text)
-                try: return _j.loads(text)
-                except _j.JSONDecodeError as je2:
-                    raise Exception(f"JSON parse fail L{je2.lineno}: {je2.msg} [{text[max(0,je2.pos-20):je2.pos+20]}]")
+            start = text.find("[")
+            end = text.rfind("]")
+            if start >= 0 and end > start:
+                try: return _j.loads(text[start:end+1])
+                except _j.JSONDecodeError: pass
+        except Exception: pass
+        # Fallback: extract individual JSON objects
+        items = []
+        depth = 0; buf = ""
+        for ch in text:
+            buf += ch
+            if ch == '{': depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    try: items.append(_j.loads(buf)); buf = ""
+                    except _j.JSONDecodeError: buf = ""
+        if items: return items
+        raise Exception(f"JSON parse fail near: {text[max(0,text.find('{' if '{' in text else 0)-10):][:100]}")
 
 
 def _pattern_suggest(apis, seed):
