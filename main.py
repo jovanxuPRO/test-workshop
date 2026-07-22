@@ -1271,20 +1271,16 @@ async def _call_llm(apis, seed, model, base_url):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""你是测试专家。根据API列表生成全面的测试用例JSON。
+    prompt = f"""测试用例生成。每个API输出多条用例，每行一个JSON对象（不要数组括号），行与行之间无逗号。
 
-API:
+API列表:
 {api_lines}
 
-每个API生成8-15条用例，必须包括：
-- 正常场景(2-3): 有效请求、标准响应、认证通过
-- 异常输入(2-3): 空参数、非法格式、超长值、SQL注入
-- 边界条件(2-3): 最小值、最大值、临界点
-- 权限安全(1-2): 无Token、过期Token、越权访问
-- 性能并发(1-2): 响应时间、并发请求
+格式（每行独立完整）:
+{{"title":"用户列表正常返回","priority":"P0","expected":"HTTP 200,返回数组","precondition":"数据库已初始化","steps":"GET /api/users","method":"GET","path":"/api/users"}}
+{{"title":"用户列表空参数","priority":"P1","expected":"HTTP 200或400","precondition":"无","steps":"GET /api/users?name=","method":"GET","path":"/api/users"}}
 
-每条JSON包含: title, priority(P0/P1/P2), expected, precondition, steps, method, path
-用```json包裹输出，不要加注释，总量不限。"""
+每个API输出5-12行，覆盖正常/异常/边界/安全场景。直接输出JSON行，不要数组符号，不要markdown包裹，不要注释。"""
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
@@ -1292,36 +1288,23 @@ API:
                   "temperature":0.8+random.random()*0.2,"max_tokens":8000})
         if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
         text = r.json()["choices"][0]["message"]["content"].strip()
-        logger.info(f"AI raw ({len(text)} chars): {repr(text[:300])}")
-        # Extract JSON from response
-        if "```json" in text:
-            parts = text.split("```json", 1)[1].split("```", 1)
-            text = parts[0].strip()
-        elif "```" in text:
-            parts = text.split("```", 2)
-            text = parts[1].strip() if len(parts) >= 2 else text
-        # Find JSON array boundaries
-        start = text.find("[")
-        end = text.rfind("]")
-        if start >= 0 and end > start:
-            text = text[start:end+1]
-        elif start < 0:
-            # No array — try to create one from loose objects
-            text = "[" + text + "]"
-        import json as _j, re
-        # Strip comments only at line starts
-        text = re.sub(r'^\s*//[^\n]*\n', '\n', text, flags=re.MULTILINE)
-        # Progressive parse: try full array first, then individual objects
-        try:
-            start = text.find("[")
-            end = text.rfind("]")
-            if start >= 0 and end > start:
-                try: return _j.loads(text[start:end+1])
-                except _j.JSONDecodeError: pass
-        except Exception: pass
-        # Fallback: extract individual JSON objects
+        logger.info(f"AI raw ({len(text)} chars): {repr(text[:200])}")
+        import json as _j
         items = []
-        depth = 0; buf = ""
+        # 1. JSONL: one object per line
+        for line in text.split("\n"):
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try: items.append(_j.loads(line))
+                except _j.JSONDecodeError: pass
+        if items: return items
+        # 2. Try array [...]
+        s, e = text.find("["), text.rfind("]")
+        if s >= 0 and e > s:
+            try: return _j.loads(text[s:e+1])
+            except _j.JSONDecodeError: pass
+        # 3. Brace depth extraction
+        depth, buf = 0, ""
         for ch in text:
             buf += ch
             if ch == '{': depth += 1
@@ -1331,7 +1314,7 @@ API:
                     try: items.append(_j.loads(buf)); buf = ""
                     except _j.JSONDecodeError: buf = ""
         if items: return items
-        raise Exception(f"JSON parse fail near: {text[max(0,text.find('{' if '{' in text else 0)-10):][:100]}")
+        raise Exception(f"No parseable objects in {len(text)} chars")
 
 
 def _pattern_suggest(apis, seed):
@@ -1341,13 +1324,24 @@ def _pattern_suggest(apis, seed):
     extra = ["并发10请求","超时重试","SQL注入字符","XSS脚本标签","过期Token","大请求体413","不支持MediaType415"]
     exp_var = {"normal":["HTTP 200","HTTP 201","HTTP 200/201/204"],"error":["HTTP 400","HTTP 422","HTTP 400/422"],"general":["HTTP 2xx","HTTP 200/301/302"]}
     pre_var = ["服务已启动","数据库已初始化","缓存已预热","测试数据已准备","Token已获取","无"]
+    # Per-method specific test titles for more variety
+    method_titles = {
+        "GET": ["可达性验证","响应体验证","Content-Type检查","响应时间基准","HEAD请求验证","分页参数兼容","移动端UA适配","JSON Accept头","缓存头验证","编码声明检查"],
+        "POST": ["正常提交","空请求体处理","非法JSON容错","Form表单提交","重复提交幂等","超大请求体","Content-Type缺失"],
+        "PUT": ["正常更新","空请求体处理","全量替换验证","部分字段更新","不存在资源更新"],
+        "DELETE": ["正常删除","不存在资源删除","已删除资源重复删除","有关联数据删除"],
+        "PATCH": ["部分更新","空请求体","无效字段更新","只读字段更新"],
+        "HEAD": ["HEAD可达","响应头验证","与GET一致性"],
+    }
     for api in apis:
         m=api.get("m","GET"); p=api.get("p","/"); n=api.get("n",""); pl=p.lower(); pf=f"[{m}] {n or p}"
+        # Use method-specific titles when available
+        titles = method_titles.get(m, ["可达性验证","响应时间基准","空请求处理","异常参数容错"])
         matched=False
         for pat,cfg in _RESOURCE_PATTERNS.items():
             if re.search(pat,pl):
                 matched=True; sc=list(cfg.get("scenarios",[])); random.shuffle(sc)
-                keep=max(2,int(len(sc)*random.uniform(0.5,0.8)))
+                keep=max(3,int(len(sc)*random.uniform(0.6,0.9)))
                 for s in sc[:keep]:
                     pri="P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if any(w in s for w in ["列表","详情"]) else "P2")
                     pool="error" if any(w in s for w in ["缺少","无效","错误","不存在","空","重复"]) else ("normal" if any(w in s for w in ["创建","正常"]) else "general")
@@ -1356,8 +1350,11 @@ def _pattern_suggest(apis, seed):
                     suggestions.append({"title":f"{pf}-{s}","priority":"P2","method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(["无","服务已启动"]),"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
                 break
         if not matched:
-            for t,pri,exp,pre in [("可达性验证","P0","HTTP 200/301/302/304","服务运行中"),("响应时间基准","P1","<5秒","网络通畅"),("空请求处理","P2","状态码<500","无"),("异常参数容错","P2","不应返回500","无")]:
-                suggestions.append({"title":f"{pf}-{t}","priority":pri,"method":m,"path":p,"expected":exp,"precondition":pre,"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
+            random.shuffle(titles)
+            keep=max(3,int(len(titles)*random.uniform(0.7,1.0)))
+            for t in titles[:keep]:
+                pri="P0" if "可达" in t or "正常" in t else ("P1" if "验证" in t or "基准" in t else "P2")
+                suggestions.append({"title":f"{pf}-{t}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(pre_var),"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
     return suggestions
 
 
