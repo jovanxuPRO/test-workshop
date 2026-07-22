@@ -662,12 +662,7 @@ function previewCases() {
                 }
             }
         });
-        // Calculate gen_code execution count
-        const methodCounts = {GET:8,POST:4,PUT:2,DELETE:1,PATCH:2,HEAD:2};
-        let execCount = 8; // unit tests
-        apis.forEach(a => { execCount += methodCounts[a.m] || 1; });
-        pgs.forEach(() => { execCount += 6; });
-        document.getElementById("case-preview-title").textContent = "用例预览（约 " + execCount + " 条）";
+        document.getElementById("case-preview-title").textContent = "用例预览";
     }).catch(e=>{
         clearInterval(_progressTimer);
         document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
