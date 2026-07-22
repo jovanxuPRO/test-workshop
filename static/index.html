@@ -289,6 +289,7 @@ async function generate() {
         return;
     }
     window._lastPid = pd.id;
+    window._counters = {};
     _streamSSE(pd.id, plan);
     } catch(e) {
         document.getElementById("r-bar").style.width = "100%";
@@ -300,17 +301,19 @@ async function generate() {
 function _streamSSE(pid, plan) {
     const evt = new EventSource('/api/stream?id=' + pid);
     window._activeEvt = evt;
-    let tt = 0, pp = 0, ff = 0;
+    if (!window._counters) window._counters = {};
+    if (!window._counters[pid]) window._counters[pid] = {tt:0, pp:0, ff:0};
+    let c = window._counters[pid];
     evt.onmessage = function(e) {
         try { const d = JSON.parse(e.data);
         if (d.t === "test") {
             document.getElementById("r-log").textContent += d.line + "\n";
-            if (d.line.includes("[PASS]")) { pp++; tt++; }
-            else if (d.line.includes("[FAIL]")) { ff++; tt++; }
-            document.getElementById("r-total").textContent = tt;
-            document.getElementById("r-passed").textContent = pp;
-            document.getElementById("r-failed").textContent = ff;
-            document.getElementById("r-rate").textContent = tt ? Math.round(pp/tt*100)+"%" : "-";
+            if (d.line.includes("[PASS]")) { c.pp++; c.tt++; }
+            else if (d.line.includes("[FAIL]")) { c.ff++; c.tt++; }
+            document.getElementById("r-total").textContent = c.tt;
+            document.getElementById("r-passed").textContent = c.pp;
+            document.getElementById("r-failed").textContent = c.ff;
+            document.getElementById("r-rate").textContent = c.tt ? Math.round(c.pp/c.tt*100)+"%" : "-";
             if (d.pct) document.getElementById("r-bar").style.width = d.pct + "%";
             document.getElementById("r-log").scrollTop = document.getElementById("r-log").scrollHeight;
         } else if (d.t === "done") {
