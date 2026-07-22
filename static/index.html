@@ -621,7 +621,8 @@ async function execPreviewed() {
         auth: document.getElementById("p-auth").value,
         authValue: document.getElementById("p-auth-value").value,
     };
-    if ((window._previewPgs||[]).length) plan.types.push('ui');
+    const hasPages = (window._previewPgs||[]).length > 0 || document.querySelectorAll("#pg-list tr").length > 0;
+    if (hasPages) plan.types.push('ui');
     window._lastPlan = plan;
     const escName = (plan.name||'').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     document.getElementById("results").classList.remove("hidden");
