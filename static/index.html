@@ -193,9 +193,10 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
 
         <label style="font-size:11px">API Key</label>
         <div style="display:flex;gap:6px;margin-top:3px">
-            <input id="ai-key-input" type="password" placeholder="sk-..." style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <input id="ai-key-input" type="password" placeholder="输入新密钥（已配置则留空）" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
             <button onclick="toggleAIKeyVisibility()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:0 10px;cursor:pointer" id="ai-eye">👁</button>
         </div>
+        <span id="ai-key-status" style="font-size:11px;color:#888;display:none"></span>
 
         <div style="display:flex;gap:12px;margin-top:12px">
             <div style="flex:1"><label style="font-size:11px">Temperature</label>
@@ -854,6 +855,11 @@ function selectAIProfile(id) {
     document.getElementById('ai-system-prompt').value=p.system_prompt||'';
     document.getElementById('ai-key-input').value='';
     document.getElementById('ai-saved-msg').style.display='none';
+    fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
+        const ks=document.getElementById('ai-key-status');
+        ks.style.display=d.configured?'block':'none';
+        ks.innerHTML='<span style="color:#27ae60">密钥已配置（服务器加密存储，重新输入将覆盖）</span>';
+    }).catch(()=>{});
     renderAIList();
 }
 function deleteAIConfig() {
@@ -892,6 +898,8 @@ async function saveAIConfig(){
         const d=await r.json();
         if(!d.ok){msg.style.display='block';msg.innerHTML='<span style="color:#ef5350">'+(d.error||'密钥保存失败')+'</span>';return;}
         document.getElementById('ai-key-input').value='';
+        document.getElementById('ai-key-status').style.display='block';
+        document.getElementById('ai-key-status').innerHTML='<span style="color:#27ae60">密钥已加密保存</span>';
     }
     saveAIProfiles();
     msg.style.display='block';
