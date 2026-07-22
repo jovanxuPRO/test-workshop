@@ -42,19 +42,26 @@ tr:hover td{background:#fafbff}
     <a href="/">返回测试工坊</a>
 </div>
 <div class="toolbar">
-    <input id="filter" placeholder="搜索用例..." oninput="render()">
-    <select id="f-priority" onchange="render()"><option value="">全部优先级</option><option>P0</option><option>P1</option><option>P2</option></select>
+    <input id="filter" placeholder="搜索用例..." oninput="render()" style="width:200px">
     <select id="f-status" onchange="render()"><option value="">全部状态</option><option>待执行</option><option>通过</option><option>失败</option></select>
-    <select id="f-module" onchange="render()"><option value="">全部模块</option></select>
-    <button class="btn btn-primary" onclick="openAdd()">+ 新增用例</button>
-    <button class="btn" onclick="execSelected()" style="background:#26a69a;color:#fff">执行选中</button>
-    <span class="tc-count" id="count">0 个用例</span>
+    <span id="filter-chips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+    <span style="flex:1"></span>
+    <input id="base-url" placeholder="目标 URL" style="width:240px" value="" onchange="localStorage.setItem('tc_url',this.value)">
+    <button class="btn" onclick="execSelected()" style="background:#26a69a;color:#fff;white-space:nowrap">执行选中</button>
+    <button class="btn btn-primary" onclick="openAdd()">+ 新增</button>
+    <span class="tc-count" id="count">0</span>
 </div>
+<div id="exec-status" style="display:none;background:#e8f5e9;padding:10px 16px;border-radius:8px;margin-bottom:10px;font-size:13px"></div>
 <div class="container">
-    <table>
-        <thead><tr><th style="width:30px"><input type="checkbox" id="select-all" onchange="toggleSelectAll()"></th><th>ID</th><th>模块</th><th>标题</th><th>优先级</th><th>方法</th><th>路径</th><th>预期结果</th><th>状态</th><th>操作</th></tr></thead>
+    <table id="tc-table" style="display:none">
+        <thead><tr><th style="width:30px"><input type="checkbox" id="select-all" onchange="toggleSelectAll()"></th><th style="width:50px">ID</th><th>模块</th><th>标题</th><th style="width:50px">方法</th><th>路径</th><th style="width:60px">状态</th><th style="width:80px">操作</th></tr></thead>
         <tbody id="tbody"></tbody>
     </table>
+    <div id="empty-state" style="text-align:center;padding:60px;color:#888">
+        <div style="font-size:48px;margin-bottom:12px">📋</div>
+        <p>暂无用例</p>
+        <p style="font-size:12px">点击「+ 新增」或从主页「保存到用例库」</p>
+    </div>
 </div>
 
 <div class="modal" id="modal" style="display:none">
@@ -88,46 +95,78 @@ let cases = [];
 async function load() {
     const r = await fetch('/api/tc');
     cases = (await r.json()).cases;
+    document.getElementById('base-url').value = localStorage.getItem('tc_url')||'';
     render();
 }
 
 function render() {
     const q = (document.getElementById('filter').value||'').toLowerCase();
-    const fp = document.getElementById('f-priority').value;
     const fs = document.getElementById('f-status').value;
-    const fm = document.getElementById('f-module').value;
-
     let filtered = cases.filter(c => {
-        if (q && !(c.module+c.title+c.expected+c.path).toLowerCase().includes(q)) return false;
-        if (fp && c.priority !== fp) return false;
+        if (q && !(c.module+c.title+c.path+c.expected||'').toLowerCase().includes(q)) return false;
         if (fs && c.status !== fs) return false;
-        if (fm && c.module !== fm) return false;
         return true;
     });
 
-    // Update module filter
-    const mods = [...new Set(cases.map(c => c.module).filter(Boolean))];
-    const sel = document.getElementById('f-module');
-    sel.innerHTML = '<option value="">全部模块</option>' + mods.map(m => `<option>${m}</option>`).join('');
+    // Group by module
+    const groups = {};
+    filtered.forEach(c => {
+        const m = c.module||'未分类';
+        if (!groups[m]) groups[m] = [];
+        groups[m].push(c);
+    });
 
-    document.getElementById('count').textContent = filtered.length + ' / ' + cases.length + ' 个用例';
-    document.getElementById('tbody').innerHTML = filtered.map(c => {
-        const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-        return `
-        <tr>
-            <td><input type="checkbox" class="tc-check" value="${e(c.id)}"></td>
-            <td style="font-family:monospace;font-size:11px">${e(c.id)}</td>
-            <td>${e(c.module)}</td>
-            <td><strong>${e(c.title)}</strong></td>
-            <td><span class="badge badge-${c.priority.toLowerCase()}">${e(c.priority)}</span></td>
-            <td style="font-family:monospace;font-size:11px">${e(c.method||'')}</td>
-            <td style="font-family:monospace;font-size:11px">${e(c.path||'')}</td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(c.expected)}</td>
-            <td><span class="badge badge-${c.status==='通过'?'pass':c.status==='失败'?'fail':'pending'}">${e(c.status)}</span></td>
-            <td style="white-space:nowrap">
-                <button class="btn btn-sm btn-primary" onclick="openEdit('${e(c.id)}')">编辑</button>
-                <button class="btn btn-sm btn-danger" onclick="delTC('${c.id}')">删除</button>
-            </td>
+    // Build filter chips
+    const mods = Object.keys(groups).sort();
+    const activeModule = document.getElementById('f-status').dataset.activeModule||'';
+    document.getElementById('filter-chips').innerHTML = mods.map(m =>
+        `<span onclick="filterModule('${m.replace(/'/g,"\\'")}')" style="cursor:pointer;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;background:${activeModule===m?'#5c6bc0':'#e8ecf1'};color:${activeModule===m?'#fff':'#555'}">${m} (${groups[m].length})</span>`
+    ).join('');
+
+    const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    let html = '';
+    for (const [mod, items] of Object.entries(groups)) {
+        html += `<tr style="background:#f8f9fb"><td colspan="8" style="padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer" onclick="toggleModule('${e(mod)}')">
+            <span id="mod-toggle-${e(mod)}" style="margin-right:6px">▼</span> ${e(mod)} (${items.length})
+            <span style="font-weight:400;color:#888;margin-left:8px;font-size:11px">${items.filter(c=>c.status==='通过').length}通过 / ${items.filter(c=>c.status==='失败').length}失败</span>
+        </td></tr>`;
+        html += `<tbody class="mod-group" id="mod-${e(mod)}">`;
+        items.forEach(c => {
+            const st = c.status||'待执行';
+            const stColor = st==='通过'?'#27ae60':st==='失败'?'#ef5350':st==='异常'?'#ff9800':'#888';
+            html += `<tr>
+                <td><input type="checkbox" class="tc-check" value="${e(c.id)}"></td>
+                <td style="font-family:monospace;font-size:10px;color:#888">${e(c.id)}</td>
+                <td style="font-size:11px">${e(c.module)}</td>
+                <td>${e(c.title)}</td>
+                <td style="font-family:monospace;font-size:10px;font-weight:600;color:#5c6bc0">${e(c.method||'')}</td>
+                <td style="font-family:monospace;font-size:11px">${e(c.path||'')}</td>
+                <td style="color:${stColor};font-weight:700;font-size:12px">${st}</td>
+                <td style="white-space:nowrap">
+                    <button class="btn btn-sm btn-primary" onclick="openEdit('${e(c.id)}')" style="font-size:11px;padding:3px 8px">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="delTC('${c.id}')" style="font-size:11px;padding:3px 8px">删除</button>
+                </td></tr>`;
+        });
+        html += '</tbody>';
+    }
+
+    document.getElementById('count').textContent = filtered.length + '/' + cases.length;
+    document.getElementById('tbody').innerHTML = html || '<tr><td colspan="8" style="text-align:center;padding:40px;color:#888">无匹配用例</td></tr>';
+    document.getElementById('tc-table').style.display = cases.length ? '' : 'none';
+    document.getElementById('empty-state').style.display = cases.length ? 'none' : '';
+}
+
+function filterModule(mod) {
+    document.getElementById('f-status').dataset.activeModule = (document.getElementById('f-status').dataset.activeModule === mod) ? '' : mod;
+    document.getElementById('filter').value = document.getElementById('f-status').dataset.activeModule ? '' : document.getElementById('filter').value;
+    render();
+}
+function toggleModule(mod) {
+    const el = document.getElementById('mod-' + mod);
+    const tg = document.getElementById('mod-toggle-' + mod);
+    if (el) { el.style.display = el.style.display === 'none' ? '' : 'none'; }
+    if (tg) { tg.textContent = tg.textContent === '▼' ? '▶' : '▼'; }
+}
         </tr>`).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:#888">暂无用例，点击「+ 新增用例」添加</td></tr>';
 }
 
@@ -201,21 +240,34 @@ async function execSelected() {
         if (tc && tc.method) selected.push(tc);
     });
     if (!selected.length) { alert('没有可执行的用例'); return; }
+    let url = document.getElementById('base-url').value.trim();
+    if (!url) {
+        url = prompt('输入目标 Base URL:', 'http://127.0.0.1:8000');
+        if (!url) return;
+        document.getElementById('base-url').value = url;
+        localStorage.setItem('tc_url', url);
+    }
     const plan = {
         name: '用例库执行',
-        url: prompt('输入目标 Base URL:', 'http://127.0.0.1:8000') || 'http://127.0.0.1:8000',
+        url: url,
         apis: selected.map(tc => ({m: tc.method, p: tc.path, n: tc.title})),
         pages: [],
         types: ['api','unit'],
         auth: 'none',
         authValue: ''
     };
+    document.getElementById('exec-status').style.display = 'block';
+    document.getElementById('exec-status').innerHTML = '<span style="color:#5c6bc0">⏳ 执行中...</span>';
     try {
         const r = await fetch('/api/gnr', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
         const d = await r.json();
-        alert('执行完成: ' + (d.passed||0) + '/' + (d.total||0) + ' 通过');
+        document.getElementById('exec-status').innerHTML = d.ok
+            ? '<span style="color:#27ae60">✅ 完成: ' + d.passed + '/' + d.total + ' 通过, ' + d.failed + ' 失败</span>'
+            : '<span style="color:#ef5350">❌ ' + (d.error||'执行失败') + '</span>';
         load();
-    } catch(e) { alert('请求失败: ' + e.message); }
+    } catch(e) {
+        document.getElementById('exec-status').innerHTML = '<span style="color:#ef5350">❌ 请求失败: ' + e.message + '</span>';
+    }
 }
 
 load();
