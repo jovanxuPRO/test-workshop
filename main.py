@@ -1278,11 +1278,16 @@ API:
 
 为每个API生成6-12条用例，包括：
 - P0: 正常场景、核心业务、认证授权（2-3条）
-- P1: 异常输入、边界条件、权限校验（2-4条）  
+- P1: 异常输入、边界条件、权限校验（2-4条）
 - P2: 并发/性能、安全注入(XSS/SQL)、兼容性（2-4条）
 
 每条用例JSON: title, priority(P0/P1/P2), expected(具体状态码+响应内容), precondition(实际前置条件), steps(详细步骤), method, path
-总量不限，越多越好。返回纯JSON数组。"""
+总量不限，越多越好。
+
+请严格输出以下格式（用```json包裹）：
+```json
+[{{"title":"...","priority":"P0","expected":"...","precondition":"...","steps":"...","method":"GET","path":"/api/users"}},...]
+```"""
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
@@ -1290,6 +1295,7 @@ API:
                   "temperature":0.8+random.random()*0.2,"max_tokens":8000})
         if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
         text = r.json()["choices"][0]["message"]["content"].strip()
+        logger.info(f"AI raw response ({len(text)} chars): {text[:200]}...")
         if "```" in text: text = text.split("```")[1].lstrip("json").strip()
         import json as _j
         # Try parsing, with fallbacks for malformed AI output
