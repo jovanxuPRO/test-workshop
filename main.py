@@ -768,13 +768,14 @@ def report_list():
         try:
             root = ET.parse(xf).getroot()
             ts = root.find("testsuite") or root
-            t = int(ts.get("tests",0)); f = int(ts.get("failures",0)); e = int(ts.get("errors",0))
+            t = int(ts.get("tests","0") or 0); f = int(ts.get("failures","0") or 0); e = int(ts.get("errors","0") or 0)
             p = t-f-e; rate = round(p/t*100,1) if t else 0
             c = "#27ae60" if f==0 else "#ef5350"
             sd = html.escape(d, quote=True)
             items += f'<tr onclick="document.getElementById(\'d{sd}\').classList.toggle(\'hidden\')" style="cursor:pointer">'
             items += f'<td style="font-family:monospace;font-size:11px">{sd[:40]}</td><td style="color:#3498db;font-weight:700">{t}</td>'
             items += f'<td style="color:#27ae60;font-weight:700">{p}</td><td style="color:#ef5350;font-weight:700">{f}</td>'
+            items += f'<td style="color:#ff9800;font-weight:700">{e}</td>'
             items += f'<td style="color:{c};font-weight:700">{rate}%</td>'
             items += f'<td><a href="/api/report?dir={sd}" target="_blank">打开</a></td></tr>'
             items += f'<tr class="hidden" id="d{sd}"><td colspan="6"><iframe src="/api/report?dir={sd}" style="width:100%;height:400px;border:none;border-radius:6px"></iframe></td></tr>'
@@ -785,7 +786,7 @@ h1{{color:#2c3e50}}table{{width:100%;border-collapse:collapse;background:#fff;bo
 th{{background:#f8f9fb;padding:10px;text-align:left;font-size:11px;color:#888}}td{{padding:10px;border-bottom:1px solid #eee;font-size:12px}}
 tr:hover td{{background:#fafbff}}.hidden{{display:none}}</style></head><body>
 <h1>测试报告库</h1><p style="color:#888;font-size:13px;margin-bottom:20px">点击行展开详情</p>
-<table><thead><tr><th>名称</th><th>总计</th><th>通过</th><th>失败</th><th>通过率</th><th>详情</th></tr></thead>
+<table><thead><tr><th>名称</th><th>总计</th><th>通过</th><th>失败</th><th>错误</th><th>通过率</th><th>详情</th></tr></thead>
 <tbody>{items}</tbody></table><p style="text-align:center;margin-top:20px"><a href="/">返回</a></p>
 </body></html>""")
 
@@ -824,7 +825,7 @@ def report(dir: str = ""):
     errors = int(ts.get("errors", 0) or 0)
     skipped = int(ts.get("skipped", 0) or 0)
     passed = total - failed - errors - skipped
-    stime = float(ts.get("time", 0))
+    stime = float(ts.get("time", 0) or 0)
 
     rows = ""
     tc_num = 0
@@ -894,12 +895,31 @@ def report(dir: str = ""):
 
             det_html = ""
             if detail:
-                det_html = '<pre style="background:#1a1c23;color:#ff7675;padding:4px;border-radius:4px;font-size:10px;overflow-x:auto;max-width:350px;margin:0">' + html.escape(detail, quote=False) + '</pre>'
+                bar = "█" * 20
+                det_html = f'<details><summary style="cursor:pointer;color:{color};font-size:11px">查看详情</summary><pre style="background:#1a1c23;color:#ff7675;padding:8px;border-radius:4px;font-size:10px;overflow-x:auto;max-width:400px;margin:4px 0 0;white-space:pre-wrap">' + html.escape(detail, quote=False) + '</pre></details>'
+
+            # Precondition from test name
+            precond_map = {
+                "test_ok":"无", "test_body":"无", "test_type":"无", "test_time":"无",
+                "test_head":"服务支持HEAD方法", "test_page":"接口支持分页参数",
+                "test_mobile":"无需特殊前置", "test_json_accept":"接口支持JSON响应",
+                "test_empty":"接口接收空请求体", "test_bad":"接口解析非法JSON",
+                "test_form":"接口接收form-data", "test_load":"页面可公网访问",
+                "test_1_page_loaded":"目标页面可访问", "test_2_no_console_errors":"无",
+                "test_3_load_time":"网络通畅", "test_4_mobile_viewport":"无",
+                "test_5_links_exist":"页面含超链接元素", "test_6_resources_loaded":"无",
+                "test_1_reachable":"服务运行中", "test_2_response_time":"网络延迟<10s",
+                "test_3_ssl_valid":"HTTPS启用", "test_4_redirect_follow":"服务可能返回3xx",
+                "test_5_headers_present":"服务正常响应", "test_6_content_length":"服务返回内容",
+                "test_7_encoding_valid":"服务声明编码", "test_8_concurrent":"服务支持并发请求",
+            }
+            precondition = precond_map.get(tn, "无")
 
             rows += '<tr>'
             rows += f'<td style="font-family:monospace;font-size:10px">TC-{tc_num:03d}</td>'
             rows += f'<td><strong>{mod_name}</strong></td>'
             rows += f'<td>{file_type}</td>'
+            rows += f'<td style="font-size:10px">{precondition}</td>'
             rows += f'<td>{scn}</td>'
             rows += f'<td style="font-size:11px">{expected}</td>'
             rows += f'<td style="color:{color};font-weight:700">{badge}</td>'
@@ -935,7 +955,7 @@ def report(dir: str = ""):
     html += '</div>\n'
     html += f'<div class="bar"><div style="height:100%;border-radius:5px;width:{rate}%;background:{mc}"></div></div>\n'
     html += '<div style="overflow-x:auto"><table>\n'
-    html += '<thead><tr><th>ID</th><th>测试模块</th><th>测试类型</th><th>测试点</th><th>预期结果</th><th>结果</th><th>耗时</th><th>备注</th></tr></thead>\n'
+    html += '<thead><tr><th>ID</th><th>测试模块</th><th>测试类型</th><th>前置条件</th><th>测试点</th><th>预期结果</th><th>结果</th><th>耗时</th><th>备注</th></tr></thead>\n'
     html += '<tbody>\n'
     html += rows
     html += '</tbody></table></div>\n'
