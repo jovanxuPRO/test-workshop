@@ -46,7 +46,26 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
     <a href="/api/history" target="_blank" rel="noopener noreferrer">执行历史</a>
     <a href="/api/report-list" target="_blank" rel="noopener noreferrer">测试报告</a>
     <a href="/tc" target="_blank" rel="noopener noreferrer">用例管理</a>
+    <span id="ai-status" style="font-size:11px;margin-left:auto;cursor:pointer" onclick="showAIKeyModal()" title="配置AI大模型API Key">AI: 未配置</span>
 </nav>
+
+<!-- AI Key Modal -->
+<div id="ai-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:9999" onclick="this.style.display='none'">
+<div style="background:#fff;border-radius:12px;padding:24px;max-width:420px;width:90%;margin:auto;position:relative;top:20%" onclick="event.stopPropagation()">
+    <h3 style="margin:0 0 4px">🤖 AI 大模型配置</h3>
+    <p style="color:#888;font-size:12px;margin:0 0 14px">用于智能生成测试用例，支持 OpenAI / 兼容 API</p>
+    <label style="font-size:13px">API Key</label>
+    <div style="display:flex;gap:6px;margin-top:4px">
+        <input id="ai-key-input" type="password" placeholder="sk-..." style="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px">
+        <button onclick="toggleAIKeyVisibility()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:0 10px;cursor:pointer" id="ai-eye">👁</button>
+    </div>
+    <p style="font-size:10px;color:#888;margin:6px 0 0">仅存储在服务器内存中，不落盘/不入库/不推送</p>
+    <p style="font-size:10px;color:#888;margin:2px 0 12px">生产环境建议设置环境变量 <code>TW_AI_KEY=sk-xxx</code></p>
+    <div style="display:flex;gap:8px">
+        <button onclick="saveAIKey()" style="flex:1;background:#5c6bc0;color:#fff;border:none;padding:10px;border-radius:6px;cursor:pointer;font-size:14px">保存</button>
+        <button onclick="clearAIKey()" style="background:#fce4ec;color:#ef5350;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-size:13px">清除</button>
+    </div>
+</div></div>
 
 <div class="main">
 <!-- PLAN -->
@@ -712,9 +731,37 @@ initTpls(); restore();
 if (!localStorage.getItem("wiz")) apply("task", document.querySelector('[data-k="task"]'));
 if (!document.querySelector("#api-list tr")) addApi();
 if (!document.querySelector("#pg-list tr")) addPg();
-fetch('/api/tc').then(r=>r.json()).then(d=>{
-    document.getElementById('tc-import-btn').textContent = '从用例库导入 (' + (d.cases||[]).length + ')';
+fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
+    document.getElementById('ai-status').textContent = 'AI: ' + (d.configured ? '已配置' : '未配置');
+    document.getElementById('ai-status').style.color = d.configured ? '#27ae60' : '#888';
 }).catch(()=>{});
+
+function showAIKeyModal() { document.getElementById('ai-modal').style.display = 'block'; document.getElementById('ai-key-input').focus(); }
+function toggleAIKeyVisibility() {
+    const inp = document.getElementById('ai-key-input');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+    document.getElementById('ai-eye').textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+async function saveAIKey() {
+    const key = document.getElementById('ai-key-input').value.trim();
+    if (!key) { alert('请输入 API Key'); return; }
+    const r = await fetch('/api/ai-key', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key})});
+    const d = await r.json();
+    if (d.ok) {
+        document.getElementById('ai-modal').style.display = 'none';
+        document.getElementById('ai-status').textContent = 'AI: 已配置 (' + d.masked + ')';
+        document.getElementById('ai-status').style.color = '#27ae60';
+        document.getElementById('ai-key-input').value = '';
+    } else { alert(d.error || '保存失败'); }
+}
+async function clearAIKey() {
+    const r = await fetch('/api/ai-key', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:''})});
+    const d = await r.json();
+    document.getElementById('ai-modal').style.display = 'none';
+    document.getElementById('ai-status').textContent = 'AI: 未配置';
+    document.getElementById('ai-status').style.color = '#888';
+    document.getElementById('ai-key-input').value = '';
+}
 </script>
 </body>
 </html>

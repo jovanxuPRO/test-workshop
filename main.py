@@ -51,6 +51,11 @@ TCF = os.path.join(BASE, "test_cases.json")
 
 # Concurrency guard: max 3 simultaneous test executions
 _exec_sem = asyncio.Semaphore(3)
+
+# AI API Key — in-memory only, never persisted to disk/DB/localStorage/logs
+# Set via env TW_AI_KEY=sk-xxx or via UI (POST /api/ai-key)
+_ai_key = os.environ.get("TW_AI_KEY", "").strip()
+logger.info(f"AI key {'configured' if _ai_key else 'not set — use TW_AI_KEY env or UI'}")
 # Simple rate limiter: max requests per endpoint per window
 _rate_limits = {}  # key -> [(timestamp, count), ...]
 
@@ -1074,6 +1079,27 @@ async def save_plan_to_tc(request: Request):
     save_auto_tcs(b)
     existing = load_tc()
     return {"ok": True, "total": len(existing)}
+
+
+@app.get("/api/ai-key-status")
+def ai_key_status():
+    """Return whether AI key is configured (never reveal the actual key)."""
+    return {"configured": bool(_ai_key), "source": "env" if os.environ.get("TW_AI_KEY") else ("ui" if _ai_key else "none")}
+
+
+@app.post("/api/ai-key")
+async def set_ai_key(request: Request):
+    """Set AI API key. Stored in memory only, never logged or persisted."""
+    global _ai_key
+    body = await request.json()
+    key = str(body.get("key", "")).strip()
+    if not key:
+        return {"ok": False, "error": "Key is empty"}
+    if len(key) < 8:
+        return {"ok": False, "error": "Key too short"}
+    _ai_key = key
+    logger.info("AI key updated via UI (length=%d, source=user)", len(key))
+    return {"ok": True, "masked": key[:4] + "****" + key[-4:] if len(key) > 8 else "****"}
 
 
 _RESOURCE_PATTERNS = {

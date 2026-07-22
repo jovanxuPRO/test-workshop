@@ -5,3 +5,6 @@ generated_tests/
 *.tmp
 *.bak
 .pytest_cache/
+.env
+*.key
+*.pem
