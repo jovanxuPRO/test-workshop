@@ -568,7 +568,10 @@ function previewCases() {
             rows+=`<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">${s.title}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[s.priority]||'#888'};padding:6px 4px">${s.priority||'P1'}</td><td style="font-size:10px;padding:6px 4px">${s.precondition||'无'}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td><td style="font-size:10px;padding:6px 4px">${s.steps||''}</td><td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||'无'}</td></tr>`;
         });
         document.getElementById('case-preview-list').innerHTML = rows;
-        document.getElementById("case-preview-title").textContent = "用例预览 (" + num + " 条)";
+        let titleText = "用例预览 (" + num + " 条)";
+        if (d.source === "ai") titleText += " · AI 生成";
+        else if (d.ai_error) titleText += " · 模板(未用AI: " + (d.ai_error||"").substring(0,30) + ")";
+        document.getElementById("case-preview-title").textContent = titleText;
     }).catch(e=>{
         clearInterval(_progressTimer);
         document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: '+e.message+'<br><small>请确认 AI Key 已配置</small></td></tr>';

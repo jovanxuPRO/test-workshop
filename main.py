@@ -1242,10 +1242,11 @@ async def ai_suggest(request: Request):
         if _ai_key:
             try:
                 results = await _call_llm(apis, seed, model, base_url)
-                if results: return {"suggestions": results}
+                if results: return {"suggestions": results, "source": "ai"}
             except Exception as e:
                 logger.warning(f"AI call failed, fallback: {e}")
-        return {"suggestions": _pattern_suggest(apis, seed)}
+                return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": str(e)[:200]}
+        return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "API Key 未配置"}
     except Exception as e:
         logger.error(f"ai-suggest crashed: {e}", exc_info=True)
         return {"suggestions": []}
