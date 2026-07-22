@@ -1224,79 +1224,68 @@ _RESOURCE_PATTERNS = {
 
 @app.post("/api/ai-suggest")
 async def ai_suggest(request: Request):
-    """AI-powered test case suggestion with seed-based variation."""
+    """AI-powered test case suggestion — uses LLM if key configured, else patterns."""
     body = await request.json()
     apis = body.get("apis", [])
     seed = body.get("seed", 0)
+    if _ai_key:
+        try:
+            results = await _call_llm(apis, seed)
+            if results: return {"suggestions": results}
+        except Exception as e:
+            logger.warning(f"AI call failed, fallback: {e}")
+    return {"suggestions": _pattern_suggest(apis, seed)}
+
+
+async def _call_llm(apis, seed):
+    import httpx, random
+    random.seed(seed)
+    api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
+    base = (os.environ.get("TW_AI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+    model = os.environ.get("TW_AI_MODEL") or "gpt-4o"
+    prompt = f"""你是ISTQB高级测试工程师。根据API生成测试用例JSON数组。
+
+API:
+{api_lines}
+
+每条: title, priority(P0/P1/P2), expected(具体), precondition(实际), steps, method, path
+每个API 3-6条，总量10-20条。返回纯JSON数组。"""
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{base}/chat/completions",
+            headers={"Authorization": f"Bearer {_ai_key}"},
+            json={"model":model,"messages":[{"role":"user","content":prompt}],
+                  "temperature":0.8+random.random()*0.2,"max_tokens":2000})
+        if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
+        text = r.json()["choices"][0]["message"]["content"].strip()
+        if "```" in text: text = text.split("```")[1].lstrip("json").strip()
+        import json as _j; return _j.loads(text)
+
+
+def _pattern_suggest(apis, seed):
+    import random; random.seed(seed)
     suggestions = []
-    step_templates = [
-        "发送 {m} {p}", "发送 {m} {p}，检查状态码",
-        "构造请求 → {m} {p} → 解析响应",
-        "1.准备测试数据 2.发送 {m} {p} 3.验证结果",
-    ]
-    import random as _rand
-    _rand.seed(seed)
-    # Extra edge cases to randomly inject
-    _extra_cases = [
-        "并发请求-10个同时", "超大数据量-响应分页", "SQL注入-特殊字符",
-        "XSS跨站-脚本标签", "超时重试-网络抖动", "过期Token-401处理",
-        "请求体过大-413拒绝", "不支持的MediaType-415",
-    ]
-    # Expected result variants per scenario type
-    _exp_variants = {
-        "normal": ["HTTP 200", "HTTP 201", "HTTP 200/201/204"],
-        "error": ["HTTP 400", "HTTP 422", "HTTP 400/422"],
-        "notfound": ["HTTP 404", "HTTP 404/410"],
-        "general": ["HTTP 2xx", "状态码<500", "HTTP 200/301/302"],
-    }
+    step_tmpl = ["发送 {m} {p}","发送 {m} {p}，检查状态码","构造请求 → {m} {p} → 解析响应","1.准备数据 2.发送 {m} {p} 3.验证"]
+    extra = ["并发10请求","超时重试","SQL注入字符","XSS脚本标签","过期Token","大请求体413","不支持MediaType415"]
+    exp_var = {"normal":["HTTP 200","HTTP 201","HTTP 200/201/204"],"error":["HTTP 400","HTTP 422","HTTP 400/422"],"general":["HTTP 2xx","HTTP 200/301/302"]}
+    pre_var = ["服务已启动","数据库已初始化","缓存已预热","测试数据已准备","Token已获取","无"]
     for api in apis:
-        m = api.get("m", "GET")
-        p = api.get("p", "/")
-        n = api.get("n", "")
-        path_lower = p.lower()
-        prefix = f"[{m}] {n or p}"
-        matched = False
-        for pattern, config in _RESOURCE_PATTERNS.items():
-            if re.search(pattern, path_lower):
-                matched = True
-                scenarios = list(config.get("scenarios", []))
-                _rand.shuffle(scenarios)
-                # Randomly drop 20-40% of scenarios for variation
-                keep = max(3, int(len(scenarios) * _rand.uniform(0.6, 0.85)))
-                for s in scenarios[:keep]:
-                    priority = "P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if "列表" in s or "详情" in s else "P2")
-                    exp_pool = "error" if any(w in s for w in ["缺少","无效","错误","不存在","空","重复"]) else ("normal" if "创建" in s or "正常" in s else "general")
-                    suggestions.append({
-                        "title": f"{prefix}-{s}",
-                        "priority": priority,
-                        "method": m, "path": p,
-                        "expected": _rand.choice(_exp_variants.get(exp_pool, _exp_variants["general"])),
-                        "precondition": _rand.choice(["服务已启动","数据库已初始化","缓存已预热","测试数据已准备","Token已获取","无"]),
-                        "steps": _rand.choice(step_templates).replace("{m}", m).replace("{p}", p),
-                    })
-                # Randomly inject 0-2 extra edge cases
-                extra = _rand.sample(_extra_cases, _rand.randint(0, 2))
-                for s in extra:
-                    suggestions.append({
-                        "title": f"{prefix}-{s}",
-                        "priority": "P2",
-                        "method": m, "path": p,
-                        "expected": _rand.choice(_exp_variants["general"]),
-                        "precondition": _rand.choice(["无","服务已启动"]),
-                        "steps": _rand.choice(step_templates).replace("{m}", m).replace("{p}", p),
-                    })
+        m=api.get("m","GET"); p=api.get("p","/"); n=api.get("n",""); pl=p.lower(); pf=f"[{m}] {n or p}"
+        matched=False
+        for pat,cfg in _RESOURCE_PATTERNS.items():
+            if re.search(pat,pl):
+                matched=True; sc=list(cfg.get("scenarios",[])); random.shuffle(sc)
+                keep=max(2,int(len(sc)*random.uniform(0.5,0.8)))
+                for s in sc[:keep]:
+                    pri="P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if any(w in s for w in ["列表","详情"]) else "P2")
+                    pool="error" if any(w in s for w in ["缺少","无效","错误","不存在","空","重复"]) else ("normal" if any(w in s for w in ["创建","正常"]) else "general")
+                    suggestions.append({"title":f"{pf}-{s}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var.get(pool,exp_var["general"])),"precondition":random.choice(pre_var),"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
+                for s in random.sample(extra,random.randint(0,2)):
+                    suggestions.append({"title":f"{pf}-{s}","priority":"P2","method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(["无","服务已启动"]),"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
                 break
         if not matched:
-            base = [
-                ("可达性验证", "P0", "HTTP 200/301/302/304", "服务运行中"),
-                ("响应时间基准", "P1", "<5秒", "网络通畅"),
-                ("空请求处理", "P2", "状态码<500", "无"),
-                ("异常参数容错", "P2", "不应返回500", "无"),
-            ]
-            for title, pri, exp, pre in base:
-                suggestions.append({"title": f"{prefix}-{title}", "priority": pri, "method": m, "path": p, "expected": exp, "precondition": pre,
-                    "steps": _rand.choice(step_templates).replace("{m}", m).replace("{p}", p)})
-    return {"suggestions": suggestions}
+            for t,pri,exp,pre in [("可达性验证","P0","HTTP 200/301/302/304","服务运行中"),("响应时间基准","P1","<5秒","网络通畅"),("空请求处理","P2","状态码<500","无"),("异常参数容错","P2","不应返回500","无")]:
+                suggestions.append({"title":f"{pf}-{t}","priority":pri,"method":m,"path":p,"expected":exp,"precondition":pre,"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
+    return suggestions
 
 
 @app.put("/api/tc/{cid}")
