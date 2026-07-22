@@ -570,7 +570,10 @@ function previewCases() {
         document.getElementById('case-preview-list').innerHTML = rows;
         let titleText = "用例预览 (" + num + " 条)";
         if (d.source === "ai") titleText += " · AI 生成";
-        else if (d.ai_error) titleText += " · 模板(未用AI: " + (d.ai_error||"").substring(0,30) + ")";
+        else {
+            var reason = d.ai_error || "未知原因";
+            titleText += " · 模板(" + reason.substring(0,40) + ")";
+        }
         document.getElementById("case-preview-title").textContent = titleText;
     }).catch(e=>{
         clearInterval(_progressTimer);
