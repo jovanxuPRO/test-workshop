@@ -112,13 +112,14 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
     </div>
 
     <button class="btn" onclick="previewCases()" style="width:100%;background:#5c6bc0;color:#fff;font-size:15px;padding:14px;border:none;border-radius:8px;cursor:pointer;font-weight:700">生成用例预览</button>
-    <p style="text-align:center;color:#888;font-size:12px;margin:6px 0">先预览再勾选执行，或直接执行全部</p>
+    <p style="text-align:center;color:#888;font-size:12px;margin:6px 0">每次生成可能不同 — 不满意可重新生成</p>
 
     <!-- Case preview (shown after previewCases) -->
     <div id="case-preview" class="hidden card" style="margin-top:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <h3 style="margin:0" id="case-preview-title">用例预览</h3>
             <span style="display:flex;gap:6px">
+                <button class="btn btn-sm" onclick="previewCases()" style="background:#fff;color:#5c6bc0;border:1px solid #5c6bc0;font-size:13px;padding:6px 16px" title="重新随机生成用例">重新生成</button>
                 <button class="btn btn-sm" onclick="execPreviewed()" style="background:#26a69a;color:#fff;font-size:13px;padding:6px 16px">执行选中</button>
                 <button class="btn btn-sm" onclick="savePreviewed()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">保存到用例库</button>
             </span>
@@ -524,31 +525,55 @@ function endpointPriority(path) {
 }
 function getTestCaseDetails(m, p, n, epP) {
     const desc = n || p;
-    // Adaptive priorities: base P0 → critical tests P0, others shift down
+    const r = () => Math.random();  // Random seed per call
     const p2 = epP === 'P0' ? 'P1' : (epP === 'P1' ? 'P2' : 'P3');
     const p1 = epP === 'P0' ? 'P0' : (epP === 'P1' ? 'P1' : 'P2');
-    const all = {
-        GET: [{title:desc+'可达性',precondition:'服务运行中',expected:'HTTP 200/301/302/304',priority:epP},
-              {title:desc+'响应体验证',precondition:'无',expected:'响应体>0或状态码≥300',priority:p1},
-              {title:desc+'Content-Type检查',precondition:'无',expected:'响应含content-type',priority:p2},
-              {title:desc+'响应时间基准',precondition:'网络通畅',expected:'<5秒',priority:p1},
-              {title:desc+'HEAD请求验证',precondition:'支持HEAD方法',expected:'状态码<500',priority:p2},
-              {title:desc+'分页参数兼容',precondition:'支持?page=参数',expected:'状态码<500',priority:p2},
-              {title:desc+'移动端UA适配',precondition:'无',expected:'iPhone UA返回<500',priority:p2},
-              {title:desc+'JSON Accept头',precondition:'支持JSON响应',expected:'状态码<500',priority:p2}],
-        POST:[{title:desc+'正常提交',precondition:'无',expected:'状态码<500',priority:p1},
-              {title:desc+'空请求体处理',precondition:'接口接收空body',expected:'状态码<500',priority:p2},
-              {title:desc+'非法JSON容错',precondition:'接口解析JSON',expected:'状态码<500',priority:p2},
-              {title:desc+'Form表单提交',precondition:'接口接收form-data',expected:'状态码<500',priority:p2}],
-        PUT:[{title:desc+'正常更新',precondition:'无',expected:'状态码<500',priority:p1},
-             {title:desc+'空请求体处理',precondition:'接口接收空body',expected:'状态码<500',priority:p2}],
-        DELETE:[{title:desc+'删除请求',precondition:'资源存在',expected:'状态码<500',priority:p1}],
-        PATCH:[{title:desc+'部分更新',precondition:'无',expected:'状态码<500',priority:p1},
-               {title:desc+'空请求体处理',precondition:'接口接收空body',expected:'状态码<500',priority:p2}],
-        HEAD:[{title:desc+'HEAD请求',precondition:'支持HEAD',expected:'状态码<500',priority:p1},
-              {title:desc+'响应头验证',precondition:'无',expected:'headers非空',priority:p2}],
+    // Random test data suggestions that vary each generation
+    const testDataVariants = [
+        '正常业务数据', '边界值(空/超长/特殊字符)', 'SQL注入测试串', 'XSS测试串',
+        '大批量数据(1000条)', '并发请求模拟', '异常字符集(emoji/Unicode)',
+        '过期Token/Auth头', '错误Content-Type', '超大请求体(>1MB)',
+    ];
+    const precondVariants = {
+        normal: ['无','服务已启动','数据库已初始化','测试数据已准备','缓存已预热'],
+        auth: ['已获取有效Token','Token即将过期','使用只读权限Token'],
+        edge: ['数据库为空','服务刚重启','缓存已清空','并发连接数接近上限'],
     };
-    return all[m] || [{title:desc+'可达性',precondition:'服务运行中',expected:'状态码<500',priority:p1}];
+    const pick = (arr) => arr[Math.floor(r() * arr.length)];
+    const all = {
+        GET: [
+            {title:desc+'可达性',precondition:pick(precondVariants.normal),expected:'HTTP 200/301/302/304',priority:epP},
+            {title:desc+'响应体验证',precondition:'无',expected:'响应体>0或状态码≥300',priority:p1,data:pick(testDataVariants)},
+            {title:desc+'Content-Type检查',precondition:'无',expected:'响应含content-type',priority:p2},
+            {title:desc+'响应时间基准',precondition:'网络通畅',expected:'<5秒',priority:p1},
+            {title:desc+'HEAD请求验证',precondition:'支持HEAD方法',expected:'状态码<500',priority:p2},
+            {title:desc+'分页参数兼容',precondition:'支持?page=参数',expected:'状态码<500',priority:p2,data:'page=1&size=10'},
+            {title:desc+'移动端UA适配',precondition:'无',expected:'iPhone UA返回<500',priority:p2},
+            {title:desc+'JSON Accept头',precondition:'支持JSON响应',expected:'状态码<500',priority:p2},
+        ],
+        POST:[
+            {title:desc+'正常提交',precondition:pick(precondVariants.normal),expected:'状态码<500',priority:p1,data:'{"key":"value"}'},
+            {title:desc+'空请求体处理',precondition:'接口接收空body',expected:'状态码<500',priority:p2},
+            {title:desc+'非法JSON容错',precondition:'接口解析JSON',expected:'状态码<500',priority:p2,data:'{invalid}'},
+            {title:desc+'Form表单提交',precondition:'接口接收form-data',expected:'状态码<500',priority:p2,data:'k=v'},
+        ],
+        PUT:[
+            {title:desc+'正常更新',precondition:pick(precondVariants.normal),expected:'状态码<500',priority:p1,data:'{"key":"updated"}'},
+            {title:desc+'空请求体处理',precondition:'接口接收空body',expected:'状态码<500',priority:p2},
+        ],
+        DELETE:[{title:desc+'删除请求',precondition:pick(precondVariants.normal),expected:'状态码<500',priority:p1}],
+        PATCH:[
+            {title:desc+'部分更新',precondition:pick(precondVariants.normal),expected:'状态码<500',priority:p1,data:'{"field":"value"}'},
+            {title:desc+'空请求体处理',precondition:'接口接收空body',expected:'状态码<500',priority:p2},
+        ],
+        HEAD:[
+            {title:desc+'HEAD请求',precondition:'支持HEAD',expected:'状态码<500',priority:p1},
+            {title:desc+'响应头验证',precondition:'无',expected:'headers非空',priority:p2},
+        ],
+    };
+    const tests = all[m] || [{title:desc+'可达性',precondition:pick(precondVariants.normal),expected:'状态码<500',priority:p1}];
+    // Randomly drop 0-2 less-important tests (P2) to vary the output
+    return tests.filter(t => t.priority !== 'P2' || r() > 0.3);
 }
 function togglePreviewAll() {
     const v = document.getElementById('preview-select-all').checked;
