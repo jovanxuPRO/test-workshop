@@ -1276,7 +1276,7 @@ API:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
-                  "temperature":0.8+random.random()*0.2,"max_tokens":4000})
+                  "temperature":0.8+random.random()*0.2,"max_tokens":8000})
         if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
         text = r.json()["choices"][0]["message"]["content"].strip()
         if "```" in text: text = text.split("```")[1].lstrip("json").strip()
@@ -1301,6 +1301,14 @@ API:
                     try: items.append(_j.loads(line))
                     except _j.JSONDecodeError: pass
             if items: return items
+            # Last resort: auto-close truncated JSON
+            fixed = text[start:end+1] if start>=0 and end>start else text
+            if fixed.rstrip().endswith(","): fixed = fixed.rstrip().rstrip(",") + "]"
+            if not fixed.rstrip().endswith("]"): fixed = fixed.rstrip() + "]"
+            # Close any unclosed string
+            if fixed.count('"') % 2 != 0: fixed += '"'
+            try: return _j.loads(fixed)
+            except _j.JSONDecodeError: pass
             raise Exception(f"AI returned unparseable JSON: {text[:100]}")
 
 
