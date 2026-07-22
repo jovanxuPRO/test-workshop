@@ -577,9 +577,9 @@ function previewCases() {
             badge.textContent = "AI 生成";
             badge.style.background = "#e8f5e9"; badge.style.color = "#27ae60";
         } else {
-            var reason = d.ai_error || "未知原因";
+            var reason = d.ai_error || "未知";
             badge.style.display = "inline-block";
-            badge.textContent = "模板(未用AI)";
+            badge.textContent = "未用AI: " + reason.substring(0, 50);
             badge.style.background = "#fff3e0"; badge.style.color = "#ff9800";
             badge.title = reason;
             titleText += " · 模板";
