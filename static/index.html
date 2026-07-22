@@ -493,6 +493,11 @@ async function execHist() {
     // Restore plan from saved data (authValue intentionally not stored)
     plan.authValue = plan.authValue || "";
     plan.pages = plan.pages || plan.pgs || [];
+    if (!plan.pages.length) {
+        // Fallback: read pages from current DOM
+        var domPgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { var u = r.querySelector(".pg-u"); if (u && u.value.trim()) domPgs.push({u:u.value.trim(), na:(r.querySelector(".pg-na")||{}).value||""}); });
+        plan.pages = domPgs;
+    }
     plan.rules = plan.rules || "";
     plan.types = plan.types || ["api","ui","data"];
     document.getElementById("dash").classList.remove("hidden");
