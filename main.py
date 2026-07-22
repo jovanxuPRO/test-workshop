@@ -1310,22 +1310,23 @@ def del_tc(cid: str):
 
 
 def save_auto_tcs(plan):
-    """Save auto-generated test cases to library with dedup by method+path."""
+    """Save auto-generated test cases to library with dedup by title."""
     name = plan.get("name", "未命名")
     existing = load_tc()
-    seen = {(tc.get("method",""), tc.get("path","")) for tc in existing}
+    seen = {tc.get("title", "") for tc in existing}
     added = 0
     for api in plan.get("apis", []):
         m = api.get("m", "GET")
         p = safe_path(api.get("p", "/"))
-        if (m, p) in seen:
+        title = api.get("n", p)
+        if title in seen:
             continue
-        seen.add((m, p))
+        seen.add(title)
         max_id = max([int(tc.get("id","0")) for tc in existing] + [0])
         existing.append({
             "id": str(max_id + 1).zfill(3),
             "module": safe(name),
-            "title": api.get("n", p),
+            "title": title,
             "priority": "P1",
             "method": m,
             "path": p,
@@ -1339,9 +1340,10 @@ def save_auto_tcs(plan):
         u = safe_path(pg.get("u", "/"))
         pg_name = pg.get("na", u)
         m = "GET"
-        if (m, u) in seen:
+        title = f"UI-{pg_name}"
+        if title in seen:
             continue
-        seen.add((m, u))
+        seen.add(title)
         max_id = max([int(tc.get("id","0")) for tc in existing] + [0])
         existing.append({
             "id": str(max_id + 1).zfill(3),

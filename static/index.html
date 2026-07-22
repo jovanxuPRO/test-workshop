@@ -819,14 +819,19 @@ async function _runGenerate(plan) {
     }
 }
 async function savePreviewed() {
-    const apis = window._previewApis||[];
-    const pgs = window._previewPgs||[];
-    if (!apis.length && !pgs.length) return;
-    const plan = {name: window._previewName||'未命名', url: document.getElementById("p-url").value.trim(), apis, pages: pgs};
+    const suggestions = window._previewSuggestions||[];
+    if (!suggestions.length) { alert('没有可保存的用例，请先生成预览'); return; }
+    // Build plan with individual test cases as APIs
+    const plan = {
+        name: window._previewName||'未命名',
+        url: document.getElementById("p-url").value.trim()||'http://localhost',
+        apis: suggestions.map(s => ({m:s.method||'GET', p:s.path||'/', n:s.title||s.path})),
+        pages: window._previewPgs||[],
+    };
     try {
         const r = await fetch('/api/save-tc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
         const d = await r.json();
-        alert('已保存 ' + (d.added||0) + ' 条用例到用例库（总计' + (d.total||0) + '条）');
+        alert('新增 ' + (d.added||0) + ' 条用例（总计' + (d.total||0) + '条，' + ((suggestions.length - (d.added||0))||0) + '条已存在）');
     } catch(e) { alert('保存失败: ' + e.message); }
 }
 let _tcs = [];
