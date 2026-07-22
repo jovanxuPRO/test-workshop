@@ -1280,7 +1280,28 @@ API:
         if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
         text = r.json()["choices"][0]["message"]["content"].strip()
         if "```" in text: text = text.split("```")[1].lstrip("json").strip()
-        import json as _j; return _j.loads(text)
+        import json as _j
+        # Try parsing, with fallbacks for malformed AI output
+        try:
+            return _j.loads(text)
+        except _j.JSONDecodeError:
+            # Try to extract array: find first [ and last ]
+            start = text.find("[")
+            end = text.rfind("]")
+            if start >= 0 and end > start:
+                try:
+                    return _j.loads(text[start:end+1])
+                except _j.JSONDecodeError:
+                    pass
+            # Try line-by-line extraction of objects
+            items = []
+            for line in text.split("\n"):
+                line = line.strip().rstrip(",")
+                if line.startswith("{") and line.endswith("}"):
+                    try: items.append(_j.loads(line))
+                    except _j.JSONDecodeError: pass
+            if items: return items
+            raise Exception(f"AI returned unparseable JSON: {text[:100]}")
 
 
 def _pattern_suggest(apis, seed):
