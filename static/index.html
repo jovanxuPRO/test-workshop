@@ -355,7 +355,7 @@ async function generate() {
     const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
     const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: document.getElementById("p-url").value.trim(), apis, pages: pgs, rules: document.getElementById("p-rules").value.split("\n").filter(l=>l.trim()), types: ["api","ui","data"], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value, time: new Date().toLocaleString()};
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
-    const safePlan = {name: plan.name, url: plan.url, time: plan.time};
+    const safePlan = {name: plan.name, url: plan.url, apis: plan.apis, pages: plan.pgs||[], rules: plan.rules, types: plan.types, auth: plan.auth, time: plan.time};
     hist.unshift(safePlan); if (hist.length > 20) hist = hist.slice(0,20); try { localStorage.setItem("plan_hist", JSON.stringify(hist)); } catch(e) {}
     const escName = (plan.name||'').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     let activeEvt = null;
@@ -470,7 +470,7 @@ function loadHist() {
         // Seed with current config if nothing in history
         var n = document.getElementById("p-name").value.trim()||"未命名";
         var u = document.getElementById("p-url").value.trim()||"http://localhost";
-        if (n) hist = [{name:n, url:u, time:new Date().toLocaleString()}];
+        if (n) hist = [{name:n, url:u, apis:[], pages:[], rules:"", types:["api","unit"], auth:"none", time:new Date().toLocaleString()}];
     }
     document.getElementById("hist-sel").innerHTML = '<option value="">-- 选择方案 --</option>' + hist.map((p,i) => `<option value="${i}">${p.name} (${p.url}) - ${p.time||''}</option>`).join("");
     fetch('/api/history-data').then(r=>r.json()).then(d=>{
@@ -490,6 +490,11 @@ async function execHist() {
     let hist = JSON.parse(localStorage.getItem("plan_hist")||"[]");
     const plan = hist[document.getElementById("hist-sel").value];
     if (!plan) return;
+    // Restore plan from saved data (authValue intentionally not stored)
+    plan.authValue = plan.authValue || "";
+    plan.pages = plan.pages || plan.pgs || [];
+    plan.rules = plan.rules || "";
+    plan.types = plan.types || ["api","unit"];
     document.getElementById("dash").classList.remove("hidden");
     document.getElementById("dash-title").textContent = plan.name + " — 执行中...";
     document.getElementById("dash-log").textContent = "";
