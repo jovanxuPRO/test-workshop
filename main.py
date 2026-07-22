@@ -1226,18 +1226,22 @@ _RESOURCE_PATTERNS = {
 @app.post("/api/ai-suggest")
 async def ai_suggest(request: Request):
     """AI-powered test case suggestion — uses LLM if key configured, else patterns."""
-    body = await request.json()
-    apis = body.get("apis", [])
-    seed = body.get("seed", 0)
-    model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
-    base_url = body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    if _ai_key:
-        try:
-            results = await _call_llm(apis, seed, model, base_url)
-            if results: return {"suggestions": results}
-        except Exception as e:
-            logger.warning(f"AI call failed, fallback: {e}")
-    return {"suggestions": _pattern_suggest(apis, seed)}
+    try:
+        body = await request.json()
+        apis = body.get("apis", [])
+        seed = body.get("seed", 0)
+        model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
+        base_url = body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        if _ai_key:
+            try:
+                results = await _call_llm(apis, seed, model, base_url)
+                if results: return {"suggestions": results}
+            except Exception as e:
+                logger.warning(f"AI call failed, fallback: {e}")
+        return {"suggestions": _pattern_suggest(apis, seed)}
+    except Exception as e:
+        logger.error(f"ai-suggest crashed: {e}", exc_info=True)
+        return {"suggestions": []}
 
 
 async def _call_llm(apis, seed, model, base_url):
