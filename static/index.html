@@ -125,6 +125,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
             <span style="display:flex;gap:6px">
                 <button class="btn btn-sm" onclick="previewCases()" style="background:#fff;color:#5c6bc0;border:1px solid #5c6bc0;font-size:13px;padding:6px 16px" title="重新随机生成用例">重新生成</button>
                 <button class="btn btn-sm" onclick="execPreviewed()" style="background:#26a69a;color:#fff;font-size:13px;padding:6px 16px">执行选中</button>
+                <button class="btn btn-sm" id="ai-suggest-btn" onclick="aiSuggestMore()" style="background:#ff9800;color:#fff;font-size:13px;padding:6px 16px;display:none" title="AI 生成额外测试建议">AI 建议</button>
                 <button class="btn btn-sm" onclick="savePreviewed()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">保存到用例库</button>
             </span>
         </div>
@@ -553,6 +554,9 @@ function previewCases() {
     document.getElementById("case-preview-title").textContent = "用例预览 (" + num + " 条)";
     document.getElementById('case-preview').classList.remove('hidden');
     document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
+    // AI suggestions button — adds bonus cases from LLM
+    var aiBtn = document.getElementById("ai-suggest-btn");
+    if (aiBtn) aiBtn.style.display = '';
 }
 function toggleAllLocks() {
     const locks = document.querySelectorAll('.pv-lock');
@@ -652,6 +656,28 @@ async function _runGenerate(plan) {
     } catch(e) {
         document.getElementById("r-log").textContent = "网络错误: " + e.message;
     }
+}
+async function aiSuggestMore() {
+    const apis = window._previewApis||[];
+    if (!apis.length) { alert('请先添加 API 接口'); return; }
+    const aiCfg = {model:'',base_url:''};
+    try { const c=JSON.parse(localStorage.getItem('ai_profiles')||'[]');const a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{};aiCfg.model=a.model||'';aiCfg.base_url=a.base_url||''; } catch(e) {}
+    document.getElementById('ai-suggest-btn').textContent = '生成中...';
+    document.getElementById('ai-suggest-btn').disabled = true;
+    try {
+        const r = await fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url})});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const d = await r.json();
+        const suggestions = d.suggestions||[];
+        if (!suggestions.length) { alert('AI 未返回建议，请确认 Key 已配置'); return; }
+        let extra = '';
+        suggestions.forEach((s,i) => {
+            extra += `<tr style="border-bottom:1px solid #eee;background:#fff8e1"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="ai_${i}" checked></td><td style="padding:4px;text-align:center;font-size:14px">💡</td><td style="font-family:monospace;font-size:10px;padding:6px 4px;color:#ff9800">AI-${String(i+1).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${window._previewName||''}</td><td style="font-weight:600;padding:6px 4px">${s.title}</td><td style="font-size:10px;font-weight:600;color:#ff9800;padding:6px 4px">AI建议</td><td style="font-size:11px;font-weight:700;color:#ff9800;padding:6px 4px">${s.priority}</td><td style="font-size:10px;padding:6px 4px">${s.precondition}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td><td style="font-size:10px;padding:6px 4px">${s.steps||''}</td><td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||'无'}</td></tr>`;
+        });
+        document.getElementById('case-preview-list').insertAdjacentHTML('beforeend', extra);
+    } catch(e) { alert('AI 请求失败: '+e.message); }
+    document.getElementById('ai-suggest-btn').textContent = 'AI 建议';
+    document.getElementById('ai-suggest-btn').disabled = false;
 }
 async function savePreviewed() {
     const apis = window._previewApis||[];
