@@ -488,18 +488,22 @@ function delExec(i) { if(confirm('Delete?')){fetch('/api/history/'+i,{method:'DE
 function onHist() { document.getElementById("btn-hist").disabled = document.getElementById("hist-sel").value === ""; }
 async function execHist() {
     let hist = JSON.parse(localStorage.getItem("plan_hist")||"[]");
-    const plan = hist[document.getElementById("hist-sel").value];
-    if (!plan) return;
-    // Restore plan from saved data (authValue intentionally not stored)
-    plan.authValue = plan.authValue || "";
-    plan.pages = plan.pages || plan.pgs || [];
-    if (!plan.pages.length) {
-        // Fallback: read pages from current DOM
-        var domPgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { var u = r.querySelector(".pg-u"); var v = u ? (u.value.trim() || u.placeholder || "/") : "/"; domPgs.push({u:v, na:(r.querySelector(".pg-na")||{}).value||(r.querySelector(".pg-na")||{}).placeholder||"页面"}); });
-        plan.pages = domPgs;
-    }
-    plan.rules = plan.rules || "";
-    plan.types = plan.types || ["api","ui","data"];
+    const stored = hist[document.getElementById("hist-sel").value];
+    if (!stored) return;
+    // Build plan from current DOM (not stored data) — ensures pages/APIs are always fresh
+    var apis = []; document.querySelectorAll("#api-list tr").forEach(r => { var m = r.querySelector(".api-m"), p = r.querySelector(".api-p"), n = r.querySelector(".api-n"); if (p && p.value.trim()) apis.push({m:m?m.value:'GET', p:p.value.trim(), n:n?n.value:''}); });
+    var pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { var u = r.querySelector(".pg-u"), na = r.querySelector(".pg-na"); var uv = u ? (u.value.trim() || u.placeholder || '/') : '/'; pgs.push({u:uv, na:na?na.value||na.placeholder||'页面':''}); });
+    var rules = (document.getElementById("p-rules").value||'').split("\n").filter(l=>l.trim());
+    var plan = {
+        name: stored.name || (document.getElementById("p-name").value||'执行'),
+        url: stored.url || (document.getElementById("p-url").value||'http://localhost'),
+        apis: apis.length ? apis : (stored.apis || []),
+        pages: pgs.length ? pgs : (stored.pages || []),
+        rules: rules.length ? rules : (stored.rules || ''),
+        types: ["api","ui","data"],
+        auth: document.getElementById("p-auth").value,
+        authValue: document.getElementById("p-auth-value").value,
+    };
     document.getElementById("dash").classList.remove("hidden");
     document.getElementById("dash-title").textContent = plan.name + " — 执行中...";
     document.getElementById("dash-log").textContent = "";
