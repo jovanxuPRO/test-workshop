@@ -259,21 +259,16 @@ async function generate() {
     btn._state = "running";
     btn.onclick = function(){
         if (btn._state === "running") {
+            fetch('/api/stop?sid=' + encodeURIComponent(window._lastPid||""), {method:'POST'});
             if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}
-            btn.textContent = "继续";
+            btn.textContent = "重新执行";
             btn.style.background = "#5c6bc0";
             btn._state = "stopped";
             document.getElementById("r-bar").style.background = "#ef5350";
-            document.getElementById("res-title").textContent = plan.name + " — 已暂停";
+            document.getElementById("res-title").textContent = plan.name + " — 已停止";
         } else if (btn._state === "stopped") {
-            btn.textContent = "停止";
-            btn.style.background = "#ef5350";
-            btn._state = "running";
-            document.getElementById("res-title").textContent = plan.name + " — 执行中...";
-            document.getElementById("r-bar").style.width = "5%";
-            document.getElementById("r-bar").style.background = "#5c6bc0";
-            document.getElementById("r-log").textContent = "重新连接...";
-            _streamSSE(window._lastPid, plan);
+            btn.style.display = "none";
+            generate();
         }
     };
 

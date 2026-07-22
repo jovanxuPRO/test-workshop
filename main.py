@@ -568,6 +568,7 @@ def stop_exec(sid: str = ""):
         except Exception:
             pass
         RUN_PROCS.pop(sid, None)
+        PLANS.pop(sid, None)
     elif not sid:
         for pid, proc in list(RUN_PROCS.items()):
             try:
@@ -576,6 +577,7 @@ def stop_exec(sid: str = ""):
             except Exception:
                 pass
         RUN_PROCS.clear()
+        PLANS.clear()
     return {"ok": True}
 
 
