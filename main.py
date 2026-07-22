@@ -1255,18 +1255,23 @@ async def _call_llm(apis, seed, model, base_url):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""你是ISTQB高级测试工程师。根据API生成测试用例JSON数组。
+    prompt = f"""你是ISTQB高级测试工程师。根据以下API列表，为每个API生成丰富的测试用例。要求全面覆盖：
 
 API:
 {api_lines}
 
-每条: title, priority(P0/P1/P2), expected(具体), precondition(实际), steps, method, path
-每个API 3-6条，总量10-20条。返回纯JSON数组。"""
+为每个API生成6-12条用例，包括：
+- P0: 正常场景、核心业务、认证授权（2-3条）
+- P1: 异常输入、边界条件、权限校验（2-4条）  
+- P2: 并发/性能、安全注入(XSS/SQL)、兼容性（2-4条）
+
+每条用例JSON: title, priority(P0/P1/P2), expected(具体状态码+响应内容), precondition(实际前置条件), steps(详细步骤), method, path
+总量不限，越多越好。返回纯JSON数组。"""
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
-                  "temperature":0.8+random.random()*0.2,"max_tokens":2000})
+                  "temperature":0.8+random.random()*0.2,"max_tokens":4000})
         if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
         text = r.json()["choices"][0]["message"]["content"].strip()
         if "```" in text: text = text.split("```")[1].lstrip("json").strip()
