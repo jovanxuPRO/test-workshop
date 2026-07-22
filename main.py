@@ -1076,6 +1076,95 @@ async def save_plan_to_tc(request: Request):
     return {"ok": True, "total": len(existing)}
 
 
+_RESOURCE_PATTERNS = {
+    r"users?|accounts?|members?": {
+        "scenarios": ["创建-正常数据", "创建-重复用户名", "创建-缺少必填字段",
+                      "创建-无效邮箱", "创建-超长用户名", "批量创建-100条",
+                      "获取列表-分页", "获取详情-存在ID", "获取详情-不存在ID",
+                      "更新-正常", "更新-不存在ID", "更新-只读字段不可改",
+                      "删除-正常", "删除-不存在ID", "删除-有依赖数据"],
+        "auth": True, "pagination": True, "validation": ["email", "username", "password"]
+    },
+    r"tasks?|todos?|items?": {
+        "scenarios": ["创建-正常", "创建-空标题", "更新状态-完成/取消",
+                      "获取列表-按状态过滤", "获取列表-按日期排序",
+                      "批量更新-全部完成", "删除-正常", "删除-已完成不可删"],
+        "auth": True, "pagination": True
+    },
+    r"orders?|payments?|transactions?": {
+        "scenarios": ["创建-正常", "创建-库存不足", "创建-金额为0",
+                      "创建-金额为负", "退款-正常", "退款-已退款不可重复",
+                      "查询-按状态", "查询-按时间范围", "导出-生成报表"],
+        "auth": True, "pagination": True, "idempotent": True
+    },
+    r"login|auth|signin|token": {
+        "scenarios": ["登录-正确凭据", "登录-错误密码", "登录-不存在用户",
+                      "登录-空用户名", "登录-空密码", "登录-锁定账户",
+                      "刷新Token-有效", "刷新Token-过期", "登出-正常"],
+        "auth": False, "rate_limit": True
+    },
+    r"search|query|find": {
+        "scenarios": ["搜索-有结果", "搜索-无结果", "搜索-空关键词",
+                      "搜索-超长关键词", "搜索-特殊字符", "搜索-分页"],
+        "pagination": True
+    },
+    r"upload|file|image|avatar|media": {
+        "scenarios": ["上传-正常图片", "上传-超大文件", "上传-不支持格式",
+                      "上传-空文件", "批量上传-10个", "删除-正常"],
+        "file_upload": True
+    },
+    r"stats?|reports?|analytics?|dashboard": {
+        "scenarios": ["统计-总体数据", "统计-时间段筛选", "统计-无数据时期",
+                      "统计-数据一致性校验", "导出-CSV", "导出-JSON"],
+        "auth": True, "cache": True
+    },
+    r"config|settings?|profile": {
+        "scenarios": ["获取配置-正常", "更新配置-正常", "更新配置-无效值",
+                      "更新配置-超限值", "重置-默认值"],
+        "auth": True
+    },
+}
+
+
+@app.post("/api/ai-suggest")
+async def ai_suggest(request: Request):
+    """AI-powered test case suggestion based on API path analysis."""
+    body = await request.json()
+    apis = body.get("apis", [])
+    suggestions = []
+    for api in apis:
+        m = api.get("m", "GET")
+        p = api.get("p", "/")
+        n = api.get("n", "")
+        path_lower = p.lower()
+        prefix = f"[{m}] {n or p}"
+        matched = False
+        for pattern, config in _RESOURCE_PATTERNS.items():
+            if re.search(pattern, path_lower):
+                matched = True
+                for s in config.get("scenarios", []):
+                    priority = "P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if "列表" in s or "详情" in s else "P2")
+                    suggestions.append({
+                        "title": f"{prefix}-{s}",
+                        "priority": priority,
+                        "method": m, "path": p,
+                        "expected": "HTTP 200/201" if "创建" in s or "正常" in s else ("HTTP 400" if "缺少" in s or "无效" in s or "错误" in s or "不存在" in s or "空" in s else "HTTP 200"),
+                        "precondition": "服务已启动" if "正常" in s or "列表" in s else ("测试数据已准备" if "存在" in s else "无"),
+                        "steps": f"1. 发送 {m} {p}" + (f"\\n2. Body: 正常数据" if m in ("POST","PUT","PATCH") else ""),
+                    })
+                break
+        if not matched:
+            base = [
+                ("可达性验证", "P0", "HTTP 200/301/302/304", "服务运行中"),
+                ("响应时间基准", "P1", "<5秒", "网络通畅"),
+                ("空请求处理", "P2", "状态码<500", "无"),
+                ("异常参数容错", "P2", "不应返回500", "无"),
+            ]
+            for title, pri, exp, pre in base:
+                suggestions.append({"title": f"{prefix}-{title}", "priority": pri, "method": m, "path": p, "expected": exp, "precondition": pre})
+    return {"suggestions": suggestions}
+
+
 @app.put("/api/tc/{cid}")
 async def upd_tc(cid: str, request: Request):
     b = await request.json()
