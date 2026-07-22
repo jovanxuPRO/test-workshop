@@ -1271,14 +1271,20 @@ async def _call_llm(apis, seed, model, base_url):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""根据API列表生成测试用例JSON数组。
+    prompt = f"""你是测试专家。根据API列表生成全面的测试用例JSON。
 
 API:
 {api_lines}
 
-每个API 4-8条用例，覆盖：P0核心场景、P1边界异常、P2安全兼容。
-每条: title, priority, expected, precondition, steps, method, path
-用```json包裹输出。"""
+每个API生成8-15条用例，必须包括：
+- 正常场景(2-3): 有效请求、标准响应、认证通过
+- 异常输入(2-3): 空参数、非法格式、超长值、SQL注入
+- 边界条件(2-3): 最小值、最大值、临界点
+- 权限安全(1-2): 无Token、过期Token、越权访问
+- 性能并发(1-2): 响应时间、并发请求
+
+每条JSON包含: title, priority(P0/P1/P2), expected, precondition, steps, method, path
+用```json包裹，总量不限，生成越多越好。"""
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
