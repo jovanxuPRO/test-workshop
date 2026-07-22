@@ -547,6 +547,11 @@ function previewCases() {
     if (!apis.length && !pgs.length) { alert('请先添加 API 接口或 Web 页面'); return; }
     window._previewApis = apis; window._previewPgs = pgs;
     window._previewName = name;
+    // If no pages configured but template should have them, force default
+    if (!pgs.length && document.getElementById("p-url").value.includes("baidu.com")) {
+        pgs.push({u:"/",na:"首页"},{u:"/s?wd=test",na:"搜索"});
+        window._previewPgs = pgs;
+    }
     window._lockedCases = window._lockedCases || [];
     document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:24px;color:#5c6bc0;font-size:13px"><span id="ai-progress-text">AI 正在分析 API 结构...</span><br><span id="ai-progress-dots" style="font-size:20px;letter-spacing:4px"></span></td></tr>';
     document.getElementById('case-preview-title').textContent = '用例预览 (生成中...)';
