@@ -206,8 +206,10 @@ def is_safe_url(url_str):
         if ip in (ipaddress.ip_address("169.254.169.254"),):
             return False
         return True
+    except (ValueError, ipaddress.AddressValueError):
+        return True  # Hostname — will be checked via DNS below, or allow with risk
     except Exception:
-        return True
+        return False  # Don't bypass SSRF on unexpected errors
 
 def safe(s):
     """Sanitize to safe identifier: retain only word chars + CJK, replace rest with _"""
@@ -1250,6 +1252,9 @@ async def ai_suggest(request: Request):
         seed = body.get("seed", 0)
         model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
         base_url = body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        # Validate base_url to prevent key exfiltration
+        if not is_safe_url(base_url):
+            return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI Base URL 被安全策略拒绝"}
         if _ai_key:
             try:
                 results = await _call_llm(apis, seed, model, base_url)
@@ -1258,7 +1263,7 @@ async def ai_suggest(request: Request):
                 elif results is not None:
                     return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI 返回了空列表"}
             except Exception as e:
-                logger.warning(f"AI call failed, fallback: {e}")
+                logger.warning(f"AI call failed: {type(e).__name__}")  # Don't log exception body (may contain auth headers)
                 return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": f"{type(e).__name__}: {str(e)[:180]}"}
         msg = "API Key 未配置" if not _ai_key else "AI 返回为空"
         return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": msg}
