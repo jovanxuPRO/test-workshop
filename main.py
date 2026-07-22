@@ -42,7 +42,7 @@ def client():
 def browser():
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-        b = p.chromium.launch(headless=True)
+        b = p.chromium.launch(headless=False, slow_mo=500)
         yield b
         b.close()
 
