@@ -1236,6 +1236,19 @@ async def ai_suggest(request: Request):
     ]
     import random as _rand
     _rand.seed(seed)
+    # Extra edge cases to randomly inject
+    _extra_cases = [
+        "并发请求-10个同时", "超大数据量-响应分页", "SQL注入-特殊字符",
+        "XSS跨站-脚本标签", "超时重试-网络抖动", "过期Token-401处理",
+        "请求体过大-413拒绝", "不支持的MediaType-415",
+    ]
+    # Expected result variants per scenario type
+    _exp_variants = {
+        "normal": ["HTTP 200", "HTTP 201", "HTTP 200/201/204"],
+        "error": ["HTTP 400", "HTTP 422", "HTTP 400/422"],
+        "notfound": ["HTTP 404", "HTTP 404/410"],
+        "general": ["HTTP 2xx", "状态码<500", "HTTP 200/301/302"],
+    }
     for api in apis:
         m = api.get("m", "GET")
         p = api.get("p", "/")
@@ -1248,14 +1261,28 @@ async def ai_suggest(request: Request):
                 matched = True
                 scenarios = list(config.get("scenarios", []))
                 _rand.shuffle(scenarios)
-                for s in scenarios:
+                # Randomly drop 20-40% of scenarios for variation
+                keep = max(3, int(len(scenarios) * _rand.uniform(0.6, 0.85)))
+                for s in scenarios[:keep]:
                     priority = "P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if "列表" in s or "详情" in s else "P2")
+                    exp_pool = "error" if any(w in s for w in ["缺少","无效","错误","不存在","空","重复"]) else ("normal" if "创建" in s or "正常" in s else "general")
                     suggestions.append({
                         "title": f"{prefix}-{s}",
                         "priority": priority,
                         "method": m, "path": p,
-                        "expected": "HTTP 200/201" if "创建" in s or "正常" in s else ("HTTP 400" if "缺少" in s or "无效" in s or "错误" in s or "不存在" in s or "空" in s else "HTTP 200"),
-                        "precondition": "服务已启动" if "正常" in s or "列表" in s else ("测试数据已准备" if "存在" in s else "无"),
+                        "expected": _rand.choice(_exp_variants.get(exp_pool, _exp_variants["general"])),
+                        "precondition": _rand.choice(["服务已启动","数据库已初始化","缓存已预热","测试数据已准备","Token已获取","无"]),
+                        "steps": _rand.choice(step_templates).replace("{m}", m).replace("{p}", p),
+                    })
+                # Randomly inject 0-2 extra edge cases
+                extra = _rand.sample(_extra_cases, _rand.randint(0, 2))
+                for s in extra:
+                    suggestions.append({
+                        "title": f"{prefix}-{s}",
+                        "priority": "P2",
+                        "method": m, "path": p,
+                        "expected": _rand.choice(_exp_variants["general"]),
+                        "precondition": _rand.choice(["无","服务已启动"]),
                         "steps": _rand.choice(step_templates).replace("{m}", m).replace("{p}", p),
                     })
                 break
