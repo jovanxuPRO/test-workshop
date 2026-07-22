@@ -308,8 +308,8 @@ def gen_code(plan):
     with open(os.path.join(out, "conftest.py"), "w", encoding="utf-8") as f:
         f.write(cf)
 
-    # unit tests — only if api/unit type requested and not exact mode
-    if ("api" in types or "unit" in types) and not plan.get("exact"):
+    # unit tests — always generate when api/unit requested
+    if "api" in types or "unit" in types:
         ut = 'import pytest, httpx, time\n'
         ut += f'B = "{url}"\n'
         ut += 'class TestUnit:\n'
