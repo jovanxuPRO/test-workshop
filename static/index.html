@@ -254,20 +254,26 @@ async function generate() {
     </div>`;
     document.getElementById("results").scrollIntoView({behavior:"smooth"});
     window._lastPlan = plan;
+    window._lastPid = "";
     var btn = document.getElementById("stop-btn");
     btn._state = "running";
     btn.onclick = function(){
         if (btn._state === "running") {
-            fetch('/api/stop',{method:'POST'});
             if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}
             btn.textContent = "继续";
             btn.style.background = "#5c6bc0";
             btn._state = "stopped";
             document.getElementById("r-bar").style.background = "#ef5350";
-            document.getElementById("res-title").textContent = plan.name + " — 已停止";
+            document.getElementById("res-title").textContent = plan.name + " — 已暂停";
         } else if (btn._state === "stopped") {
-            btn.style.display = "none";
-            generate();
+            btn.textContent = "停止";
+            btn.style.background = "#ef5350";
+            btn._state = "running";
+            document.getElementById("res-title").textContent = plan.name + " — 执行中...";
+            document.getElementById("r-bar").style.width = "5%";
+            document.getElementById("r-bar").style.background = "#5c6bc0";
+            document.getElementById("r-log").textContent = "重新连接...";
+            _streamSSE(window._lastPid, plan);
         }
     };
 
@@ -281,15 +287,19 @@ async function generate() {
         document.getElementById("r-log").textContent = "错误: " + (pd.error || "Plan submission failed");
         return;
     }
-    const evt = new EventSource('/api/stream?id=' + pd.id);
+    window._lastPid = pd.id;
+    _streamSSE(pd.id, plan);
+}
+function _streamSSE(pid, plan) {
+    const evt = new EventSource('/api/stream?id=' + pid);
     window._activeEvt = evt;
     let tt = 0, pp = 0, ff = 0;
     evt.onmessage = function(e) {
         try { const d = JSON.parse(e.data);
         if (d.t === "test") {
             document.getElementById("r-log").textContent += d.line + "\n";
-            if (d.line.includes("PASSED")) { pp++; tt++; }
-            else if (d.line.includes("FAILED")) { ff++; tt++; }
+            if (d.line.includes("[PASS]")) { pp++; tt++; }
+            else if (d.line.includes("[FAIL]")) { ff++; tt++; }
             document.getElementById("r-total").textContent = tt;
             document.getElementById("r-passed").textContent = pp;
             document.getElementById("r-failed").textContent = ff;
@@ -300,7 +310,6 @@ async function generate() {
             evt.close();
             window._activeEvt = null;
             var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; }
-            // Fetch precise numbers from report
             setTimeout(async ()=>{
                 try{
                     const r = await fetch('/api/report-count');
@@ -320,6 +329,10 @@ async function generate() {
         } catch(e) { /* skip malformed SSE messages */ }
     };
     evt.onerror = function() { evt.close(); window._activeEvt = null; var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; } document.getElementById("r-bar").style.background = "#ef5350"; document.getElementById("res-title").textContent = plan.name + " — 连接中断"; };
+}
+// end _streamSSE
+
+// ===== EXEC =====
     } catch(e) {
         document.getElementById("r-bar").style.width = "100%";
         document.getElementById("r-bar").style.background = "#ef5350";
