@@ -141,49 +141,61 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
 
 <!-- AI -->
 <div id="tab-ai" class="hidden">
-    <div class="card" style="max-width:560px">
-        <h2>AI 大模型配置</h2>
-        <p style="color:#888;font-size:12px;margin-bottom:20px">配置 AI 模型用于智能生成测试用例，支持 OpenAI / DeepSeek / 通义千问 / Claude 等兼容 API</p>
+    <div style="display:flex;gap:16px;align-items:flex-start">
+    <!-- Left: config list -->
+    <div class="card" style="width:220px;flex-shrink:0;padding:14px">
+        <h3 style="margin:0 0 10px;font-size:14px">已保存配置</h3>
+        <div id="ai-config-list" style="max-height:420px;overflow-y:auto;margin-bottom:8px;font-size:12px"></div>
+        <button onclick="newAIConfig()" style="width:100%;background:#5c6bc0;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-size:12px">+ 新增配置</button>
+    </div>
+    <!-- Right: config form -->
+    <div class="card" style="flex:1">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:8px">
+                <h2 style="margin:0;font-size:16px">配置详情</h2>
+                <input id="ai-config-name" placeholder="配置名称" style="font-size:13px;padding:4px 8px;border:1px solid #ddd;border-radius:4px;width:140px">
+            </div>
+            <span style="display:flex;gap:6px">
+                <button onclick="saveAIConfig()" style="background:#5c6bc0;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600">保存</button>
+                <button onclick="deleteAIConfig()" style="background:#fce4ec;color:#ef5350;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:12px">删除</button>
+            </span>
+        </div>
 
-        <div style="display:flex;gap:12px;margin-bottom:14px">
-            <div style="flex:1"><label style="font-size:12px">模型提供商</label>
-            <select id="ai-provider" onchange="onAIProviderChange()" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+            <div style="flex:1"><label style="font-size:11px">模型提供商</label>
+            <select id="ai-provider" onchange="onAIProviderChange()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
                 <option value="openai">OpenAI</option>
                 <option value="deepseek">DeepSeek</option>
                 <option value="qwen">通义千问 (Qwen)</option>
                 <option value="claude">Claude (Anthropic)</option>
                 <option value="custom">自定义</option></select></div>
-            <div style="flex:1"><label style="font-size:12px">模型名称</label>
-            <input id="ai-model" placeholder="gpt-4o" value="gpt-4o" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:13px"></div>
+            <div style="flex:1"><label style="font-size:11px">模型名称</label>
+            <input id="ai-model" placeholder="gpt-4o" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px"></div>
         </div>
 
-        <div style="margin-bottom:14px">
-            <label style="font-size:12px">API Base URL（留空使用默认）</label>
-            <input id="ai-base-url" placeholder="https://api.openai.com/v1" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+        <div style="margin-bottom:12px">
+            <label style="font-size:11px">API Base URL</label>
+            <input id="ai-base-url" placeholder="https://api.openai.com/v1" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
         </div>
 
-        <label style="font-size:12px">API Key</label>
-        <div style="display:flex;gap:6px;margin-top:4px">
-            <input id="ai-key-input" type="password" placeholder="sk-..." style="flex:1;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:13px">
-            <button onclick="toggleAIKeyVisibility()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:0 12px;cursor:pointer;font-size:16px" id="ai-eye">👁</button>
-        </div>
-        <p style="font-size:10px;color:#888;margin:4px 0 0">AES 加密存储，仅运行时解密到内存</p>
-
-        <div style="display:flex;gap:12px;margin-top:14px">
-            <div style="flex:1"><label style="font-size:12px">Temperature</label>
-            <input id="ai-temp" type="number" min="0" max="2" step="0.1" value="0.7" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:13px"></div>
-            <div style="flex:1"><label style="font-size:12px">Max Tokens</label>
-            <input id="ai-max-tokens" type="number" min="100" max="32000" step="100" value="4096" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:13px"></div>
+        <label style="font-size:11px">API Key</label>
+        <div style="display:flex;gap:6px;margin-top:3px">
+            <input id="ai-key-input" type="password" placeholder="sk-..." style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+            <button onclick="toggleAIKeyVisibility()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:0 10px;cursor:pointer" id="ai-eye">👁</button>
         </div>
 
-        <label style="font-size:12px;margin-top:14px;display:block">System Prompt（定义 AI 生成测试用例的风格）</label>
-        <textarea id="ai-system-prompt" rows="3" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:6px;font-size:12px;resize:vertical;font-family:monospace">你是一个专业的测试工程师，根据 API 定义生成 ISTQB 标准的测试用例。每条用例包含：编号、模块、标题、优先级、前置条件、测试步骤、预期结果。优先级根据业务重要性自适应。</textarea>
-
-        <div style="display:flex;gap:8px;margin-top:16px">
-            <button onclick="saveAIConfig()" style="flex:1;background:#5c6bc0;color:#fff;border:none;padding:12px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600">保存配置</button>
-            <button onclick="clearAIKey()" style="background:#fce4ec;color:#ef5350;border:none;padding:12px 20px;border-radius:6px;cursor:pointer;font-size:13px">清除密钥</button>
+        <div style="display:flex;gap:12px;margin-top:12px">
+            <div style="flex:1"><label style="font-size:11px">Temperature</label>
+            <input id="ai-temp" type="number" min="0" max="2" step="0.1" value="0.7" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px"></div>
+            <div style="flex:1"><label style="font-size:11px">Max Tokens</label>
+            <input id="ai-max-tokens" type="number" min="100" max="32000" step="100" value="4096" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px"></div>
         </div>
-        <div id="ai-saved-msg" style="margin-top:12px;font-size:13px;display:none"></div>
+
+        <label style="font-size:11px;margin-top:12px;display:block">System Prompt</label>
+        <textarea id="ai-system-prompt" rows="2" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:11px;resize:vertical;font-family:monospace">你是一个专业的测试工程师，根据 API 定义生成 ISTQB 标准的测试用例。</textarea>
+
+        <div id="ai-saved-msg" style="margin-top:10px;font-size:12px;display:none"></div>
+    </div>
     </div>
 </div>
 
@@ -756,84 +768,100 @@ initTpls(); restore();
 if (!localStorage.getItem("wiz")) apply("task", document.querySelector('[data-k="task"]'));
 if (!document.querySelector("#api-list tr")) addApi();
 if (!document.querySelector("#pg-list tr")) addPg();
-fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
-    document.getElementById('ai-status').textContent = d.configured ? '(已配置)' : '';
-    document.getElementById('ai-status').style.color = d.configured ? '#27ae60' : '#888';
-}).catch(()=>{});
 
-function showAIKeyModal() { tab('ai'); }
-function toggleAIKeyVisibility() {
-    const inp = document.getElementById('ai-key-input');
-    inp.type = inp.type === 'password' ? 'text' : 'password';
-    document.getElementById('ai-eye').textContent = inp.type === 'password' ? '👁' : '🙈';
-}
-function onAIProviderChange() {
-    const p = document.getElementById('ai-provider').value;
-    const defaults = {
-        openai: {model:'gpt-4o', url:'https://api.openai.com/v1'},
-        deepseek: {model:'deepseek-chat', url:'https://api.deepseek.com/v1'},
-        qwen: {model:'qwen-max', url:'https://dashscope.aliyuncs.com/compatible-mode/v1'},
-        claude: {model:'claude-3-5-sonnet-20241022', url:'https://api.anthropic.com/v1'},
-        custom: {model:'', url:''},
-    };
-    const d = defaults[p];
-    if (d) {
-        if (d.model) document.getElementById('ai-model').value = d.model;
-        if (d.url) document.getElementById('ai-base-url').value = d.url;
-        else document.getElementById('ai-base-url').value = '';
+// ===== AI CONFIG (multi-profile) =====
+let _aiProfiles = [], _aiActiveId = '', _aiEditingId = '';
+
+function loadAIProfiles() {
+    try { _aiProfiles = JSON.parse(localStorage.getItem('ai_profiles')||'[]'); } catch(e) { _aiProfiles = []; }
+    _aiActiveId = localStorage.getItem('ai_active')||'';
+    if (!_aiProfiles.length) {
+        _aiProfiles.push({id:'default',name:'默认配置',provider:'deepseek',model:'deepseek-chat',base_url:'https://api.deepseek.com/v1',temperature:0.7,max_tokens:4096,system_prompt:'你是一个专业的测试工程师，根据 API 定义生成 ISTQB 标准的测试用例。'});
+        _aiActiveId = 'default';
+        saveAIProfiles();
     }
+    renderAIList();
+    if (_aiActiveId) selectAIProfile(_aiActiveId);
+    else selectAIProfile(_aiProfiles[0].id);
+    // Check key status
+    fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
+        document.getElementById('ai-status').textContent = d.configured ? '(已配置)' : '';
+        document.getElementById('ai-status').style.color = d.configured ? '#27ae60' : '#888';
+    }).catch(()=>{});
 }
-function getAIConfig() {
-    return {
-        provider: document.getElementById('ai-provider').value,
-        model: document.getElementById('ai-model').value.trim(),
-        base_url: document.getElementById('ai-base-url').value.trim(),
-        key: document.getElementById('ai-key-input').value.trim(),
-        temperature: parseFloat(document.getElementById('ai-temp').value)||0.7,
-        max_tokens: parseInt(document.getElementById('ai-max-tokens').value)||4096,
-        system_prompt: document.getElementById('ai-system-prompt').value.trim(),
-    };
+function saveAIProfiles() { localStorage.setItem('ai_profiles',JSON.stringify(_aiProfiles)); localStorage.setItem('ai_active',_aiActiveId); }
+function renderAIList() {
+    document.getElementById('ai-config-list').innerHTML = _aiProfiles.map(p => {
+        const a=p.id===_aiActiveId, e=p.id===_aiEditingId;
+        const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        return `<div onclick="selectAIProfile('${p.id}')" style="padding:8px 10px;margin-bottom:4px;border-radius:6px;cursor:pointer;font-size:12px;background:${e?'#e8ecf1':a?'#e8f5e9':'#fff'};border:1px solid ${a?'#27ae60':'#e8ecf1'}">
+            <div style="font-weight:600;display:flex;justify-content:space-between;align-items:center">${esc(p.name)}${a?' <span style="font-size:10px;color:#27ae60">●</span>':''}</div>
+            <div style="color:#888;font-size:10px">${esc(p.provider)} / ${esc(p.model||'未设置')}</div></div>`;
+    }).join('');
 }
-async function saveAIConfig() {
-    const cfg = getAIConfig();
-    const msg = document.getElementById('ai-saved-msg');
-    if (!cfg.key) { msg.style.display='block'; msg.innerHTML='<span style="color:#ef5350">请输入 API Key</span>'; return; }
-    // Save AI key encrypted
-    const r = await fetch('/api/ai-key', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:cfg.key})});
-    const d = await r.json();
-    // Save other config to localStorage (not sensitive)
-    const {key, ...safeCfg} = cfg;
-    localStorage.setItem('ai_config', JSON.stringify(safeCfg));
-    if (d.ok) {
-        msg.style.display='block';
-        msg.innerHTML = '<span style="color:#27ae60">配置已保存（密钥加密存储，其他配置本地保存）</span>';
-        document.getElementById('ai-status').textContent = '(已配置)';
-        document.getElementById('ai-status').style.color = '#27ae60';
-        document.getElementById('ai-key-input').value = '';
-    } else {
-        msg.style.display='block'; msg.innerHTML = '<span style="color:#ef5350">' + (d.error||'保存失败') + '</span>';
+function newAIConfig() {
+    const id='cfg_'+Date.now();
+    _aiProfiles.push({id,name:'新配置',provider:'openai',model:'gpt-4o',base_url:'',temperature:0.7,max_tokens:4096,system_prompt:'你是一个专业的测试工程师，根据 API 定义生成 ISTQB 标准的测试用例。'});
+    saveAIProfiles(); selectAIProfile(id);
+}
+function selectAIProfile(id) {
+    _aiEditingId=id; const p=_aiProfiles.find(x=>x.id===id); if(!p)return;
+    document.getElementById('ai-config-name').value=p.name||'';
+    document.getElementById('ai-provider').value=p.provider||'openai';
+    document.getElementById('ai-model').value=p.model||'';
+    document.getElementById('ai-base-url').value=p.base_url||'';
+    document.getElementById('ai-temp').value=p.temperature||0.7;
+    document.getElementById('ai-max-tokens').value=p.max_tokens||4096;
+    document.getElementById('ai-system-prompt').value=p.system_prompt||'';
+    document.getElementById('ai-key-input').value='';
+    document.getElementById('ai-saved-msg').style.display='none';
+    renderAIList();
+}
+function deleteAIConfig() {
+    if(_aiProfiles.length<=1){alert('至少保留一个配置');return;}
+    if(!confirm('删除此配置？'))return;
+    _aiProfiles=_aiProfiles.filter(x=>x.id!==_aiEditingId);
+    if(_aiActiveId===_aiEditingId)_aiActiveId=_aiProfiles[0].id;
+    _aiEditingId=_aiProfiles[0].id; saveAIProfiles(); selectAIProfile(_aiEditingId);
+}
+function showAIKeyModal(){tab('ai');}
+function toggleAIKeyVisibility(){
+    const inp=document.getElementById('ai-key-input');
+    inp.type=inp.type==='password'?'text':'password';
+    document.getElementById('ai-eye').textContent=inp.type==='password'?'👁':'🙈';
+}
+function onAIProviderChange(){
+    const p=document.getElementById('ai-provider').value;
+    const m={openai:{m:'gpt-4o',u:'https://api.openai.com/v1'},deepseek:{m:'deepseek-chat',u:'https://api.deepseek.com/v1'},qwen:{m:'qwen-max',u:'https://dashscope.aliyuncs.com/compatible-mode/v1'},claude:{m:'claude-3-5-sonnet-20241022',u:'https://api.anthropic.com/v1'},custom:{m:'',u:''}};
+    const d=m[p]; if(d){document.getElementById('ai-model').value=d.m;document.getElementById('ai-base-url').value=d.u;}
+}
+async function saveAIConfig(){
+    if(!_aiEditingId)return;
+    const p=_aiProfiles.find(x=>x.id===_aiEditingId); if(!p)return;
+    const msg=document.getElementById('ai-saved-msg');
+    p.name=document.getElementById('ai-config-name').value.trim()||'未命名';
+    p.provider=document.getElementById('ai-provider').value;
+    p.model=document.getElementById('ai-model').value.trim();
+    p.base_url=document.getElementById('ai-base-url').value.trim();
+    p.temperature=parseFloat(document.getElementById('ai-temp').value)||0.7;
+    p.max_tokens=parseInt(document.getElementById('ai-max-tokens').value)||4096;
+    p.system_prompt=document.getElementById('ai-system-prompt').value.trim();
+    _aiActiveId=_aiEditingId;
+    const key=document.getElementById('ai-key-input').value.trim();
+    if(key){
+        const r=await fetch('/api/ai-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
+        const d=await r.json();
+        if(!d.ok){msg.style.display='block';msg.innerHTML='<span style="color:#ef5350">'+(d.error||'密钥保存失败')+'</span>';return;}
+        document.getElementById('ai-key-input').value='';
     }
-}
-async function clearAIKey() {
-    const r = await fetch('/api/ai-key', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:''})});
-    await r.json();
-    localStorage.removeItem('ai_config');
-    document.getElementById('ai-saved-msg').style.display='block';
-    document.getElementById('ai-saved-msg').innerHTML = '<span style="color:#888">已清除全部配置</span>';
-    document.getElementById('ai-status').textContent = '';
-    document.getElementById('ai-key-input').value = '';
+    saveAIProfiles();
+    msg.style.display='block';
+    msg.innerHTML='<span style="color:#27ae60">已保存，当前使用: '+p.name+' ('+p.provider+')</span>';
+    document.getElementById('ai-status').textContent='(已配置)';
+    document.getElementById('ai-status').style.color='#27ae60';
 }
 
-// Restore AI config on page load
-(function(){
-    const cfg = JSON.parse(localStorage.getItem('ai_config')||'{}');
-    if (cfg.provider) document.getElementById('ai-provider').value = cfg.provider;
-    if (cfg.model) document.getElementById('ai-model').value = cfg.model;
-    if (cfg.base_url) document.getElementById('ai-base-url').value = cfg.base_url;
-    if (cfg.temperature) document.getElementById('ai-temp').value = cfg.temperature;
-    if (cfg.max_tokens) document.getElementById('ai-max-tokens').value = cfg.max_tokens;
-    if (cfg.system_prompt) document.getElementById('ai-system-prompt').value = cfg.system_prompt;
-})();
+loadAIProfiles();
 </script>
 </body>
 </html>
