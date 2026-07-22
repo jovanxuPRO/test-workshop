@@ -573,6 +573,7 @@ async def gnr(request: Request):
                 "dir": os.path.basename(d),
             })
             save_auto_tcs(body)
+            update_tc_status(body, xml_path)
             return {"ok": f == 0, "total": t, "passed": p, "failed": f, "log": r.stdout[-5000:]}
         except Exception as ex:
             logger.error(f"gnr failed: {ex}", exc_info=True)
@@ -751,6 +752,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                         "dir": os.path.basename(d)}
                     save_hist_entry(e)
                     save_auto_tcs(plan)
+                    update_tc_status(plan, xml_path)
                     yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
                     RUN_PROCS.pop(pid, None)
                     break
@@ -1065,6 +1067,15 @@ async def add_tc(request: Request):
     save_tc(tcs)
     return {"ok": True}
 
+@app.post("/api/save-tc")
+async def save_plan_to_tc(request: Request):
+    """Save plan's APIs/pages to TC library without executing."""
+    b = await request.json()
+    save_auto_tcs(b)
+    existing = load_tc()
+    return {"ok": True, "total": len(existing)}
+
+
 @app.put("/api/tc/{cid}")
 async def upd_tc(cid: str, request: Request):
     b = await request.json()
@@ -1135,6 +1146,43 @@ def save_auto_tcs(plan):
     if added:
         save_tc(existing)
         logger.info(f"Saved {added} auto-generated TCs from '{name}'")
+
+
+def update_tc_status(plan, xml_path):
+    """Update test case statuses based on execution results."""
+    if not os.path.exists(xml_path):
+        return
+    try:
+        root = ET.parse(xml_path).getroot()
+        results = {}  # classname -> status
+        for ts in root.findall("testsuite"):
+            for tc in ts.findall("testcase"):
+                cn = tc.get("classname", "")
+                failed = tc.find("failure") is not None
+                errored = tc.find("error") is not None
+                results[cn] = "失败" if failed else ("异常" if errored else "通过")
+        if not results:
+            return
+        tcs = load_tc()
+        updated = 0
+        for tc in tcs:
+            if tc.get("status") in ("通过", "失败", "异常"):
+                continue  # already has final status, don't overwrite unless re-run
+            # Match by method+path
+            m = tc.get("method", "GET")
+            p = tc.get("path", "")
+            best = "通过"
+            for cn, status in results.items():
+                if p in cn and ("Test_" in cn or "test_" in cn):
+                    if status != "通过":
+                        best = status
+                        break
+            tc["status"] = best
+            updated += 1
+        if updated:
+            save_tc(tcs)
+    except Exception:
+        pass
 
 @app.get("/tc")
 def tc_page():

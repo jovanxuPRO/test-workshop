@@ -47,11 +47,12 @@ tr:hover td{background:#fafbff}
     <select id="f-status" onchange="render()"><option value="">全部状态</option><option>待执行</option><option>通过</option><option>失败</option></select>
     <select id="f-module" onchange="render()"><option value="">全部模块</option></select>
     <button class="btn btn-primary" onclick="openAdd()">+ 新增用例</button>
+    <button class="btn" onclick="execSelected()" style="background:#26a69a;color:#fff">执行选中</button>
     <span class="tc-count" id="count">0 个用例</span>
 </div>
 <div class="container">
     <table>
-        <thead><tr><th>ID</th><th>模块</th><th>标题</th><th>优先级</th><th>方法</th><th>路径</th><th>预期结果</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th style="width:30px"><input type="checkbox" id="select-all" onchange="toggleSelectAll()"></th><th>ID</th><th>模块</th><th>标题</th><th>优先级</th><th>方法</th><th>路径</th><th>预期结果</th><th>状态</th><th>操作</th></tr></thead>
         <tbody id="tbody"></tbody>
     </table>
 </div>
@@ -114,6 +115,7 @@ function render() {
         const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         return `
         <tr>
+            <td><input type="checkbox" class="tc-check" value="${e(c.id)}"></td>
             <td style="font-family:monospace;font-size:11px">${e(c.id)}</td>
             <td>${e(c.module)}</td>
             <td><strong>${e(c.title)}</strong></td>
@@ -126,7 +128,7 @@ function render() {
                 <button class="btn btn-sm btn-primary" onclick="openEdit('${e(c.id)}')">编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="delTC('${c.id}')">删除</button>
             </td>
-        </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;padding:40px;color:#888">暂无用例，点击「+ 新增用例」添加</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:#888">暂无用例，点击「+ 新增用例」添加</td></tr>';
 }
 
 function openAdd() {
@@ -184,6 +186,36 @@ async function delTC(id) {
     if (!confirm('删除用例 ' + id + '?')) return;
     await fetch('/api/tc/' + id, { method: 'DELETE' });
     await load();
+}
+
+function toggleSelectAll() {
+    const v = document.getElementById('select-all').checked;
+    document.querySelectorAll('.tc-check').forEach(cb => cb.checked = v);
+}
+async function execSelected() {
+    const checks = document.querySelectorAll('.tc-check:checked');
+    if (!checks.length) { alert('请至少勾选一个用例'); return; }
+    const selected = [];
+    checks.forEach(cb => {
+        const tc = cases.find(t => t.id === cb.value);
+        if (tc && tc.method) selected.push(tc);
+    });
+    if (!selected.length) { alert('没有可执行的用例'); return; }
+    const plan = {
+        name: '用例库执行',
+        url: prompt('输入目标 Base URL:', 'http://127.0.0.1:8000') || 'http://127.0.0.1:8000',
+        apis: selected.map(tc => ({m: tc.method, p: tc.path, n: tc.title})),
+        pages: [],
+        types: ['api','unit'],
+        auth: 'none',
+        authValue: ''
+    };
+    try {
+        const r = await fetch('/api/gnr', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
+        const d = await r.json();
+        alert('执行完成: ' + (d.passed||0) + '/' + (d.total||0) + ' 通过');
+        load();
+    } catch(e) { alert('请求失败: ' + e.message); }
 }
 
 load();

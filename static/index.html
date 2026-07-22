@@ -102,6 +102,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
     </div>
 
     <button class="btn btn-go" onclick="generate()">生成测试代码 & 执行</button>
+    <button class="btn" onclick="saveToTC()" style="width:100%;background:#5c6bc0;color:#fff;font-size:14px;padding:10px;margin-top:8px;border:none;border-radius:8px;cursor:pointer">保存到用例库</button>
     <div id="results" class="hidden" style="margin-top:16px" aria-live="polite" aria-atomic="true"></div>
 </div>
 
@@ -429,6 +430,18 @@ async function execHist() {
 
 // ===== TC IMPORT =====
 let _tcs = [];
+async function saveToTC() {
+    save();
+    const apis = []; document.querySelectorAll(".api-row").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
+    const pgs = []; document.querySelectorAll(".pg-row").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
+    const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: document.getElementById("p-url").value.trim(), apis, pages: pgs};
+    try {
+        const r = await fetch('/api/save-tc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
+        const d = await r.json();
+        alert('已保存 ' + (d.added||0) + ' 个用例到用例库');
+        window.open('/tc','_blank');
+    } catch(e) { alert('保存失败: ' + e.message); }
+}
 async function loadTCs() {
     try {
         const r = await fetch('/api/tc');
