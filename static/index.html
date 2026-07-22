@@ -259,16 +259,22 @@ async function generate() {
     btn._state = "running";
     btn.onclick = function(){
         if (btn._state === "running") {
-            fetch('/api/stop?sid=' + encodeURIComponent(window._lastPid||""), {method:'POST'});
+            // Pause: close SSE but keep process alive
             if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}
-            btn.textContent = "重新执行";
+            btn.textContent = "继续";
             btn.style.background = "#5c6bc0";
-            btn._state = "stopped";
-            document.getElementById("r-bar").style.background = "#ef5350";
-            document.getElementById("res-title").textContent = plan.name + " — 已停止";
-        } else if (btn._state === "stopped") {
-            btn.style.display = "none";
-            generate();
+            btn._state = "paused";
+            document.getElementById("r-bar").style.background = "#5c6bc0";
+            document.getElementById("r-bar").style.width = document.getElementById("r-bar").style.width;
+            document.getElementById("r-log").textContent += "\n⏸ 已暂停 — 点击「继续」恢复\n";
+            document.getElementById("r-log").scrollTop = document.getElementById("r-log").scrollHeight;
+        } else if (btn._state === "paused") {
+            // Resume: reconnect SSE to same pid
+            btn.textContent = "停止";
+            btn.style.background = "#ef5350";
+            btn._state = "running";
+            document.getElementById("r-log").textContent += "\n▶ 继续执行...\n";
+            _streamSSE(window._lastPid, plan);
         }
     };
 
