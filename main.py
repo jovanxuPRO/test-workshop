@@ -119,6 +119,7 @@ _rate_limits = {}  # key -> [(timestamp, count), ...]
 
 def _check_rate(key, max_req=60, window=60):
     """Return True if rate limit not exceeded. Simple sliding window."""
+    global _rate_limits
     now = datetime.now().timestamp()
     if key not in _rate_limits:
         _rate_limits[key] = []
@@ -647,15 +648,18 @@ PLANS = {}
 
 @app.post("/api/plan")
 async def save_plan(request: Request):
-    if not _check_rate("plan", max_req=30, window=60):
-        return {"error": "Rate limit exceeded"}
-    body = await request.json()
-    # Size limit: prevent abuse
-    if len(json.dumps(body)) > 50000:
-        return {"error": "Plan too large"}
-    pid = uuid.uuid4().hex[:8]
-    PLANS[pid] = body
-    return {"id": pid}
+    try:
+        if not _check_rate("plan", max_req=30, window=60):
+            return {"error": "Rate limit exceeded"}
+        body = await request.json()
+        if len(json.dumps(body)) > 50000:
+            return {"error": "Plan too large"}
+        pid = uuid.uuid4().hex[:8]
+        PLANS[pid] = body
+        return {"id": pid}
+    except Exception as e:
+        logger.error(f"save_plan failed: {e}", exc_info=_DEBUG)
+        return {"error": "Internal error"}
 
 
 RUN_PROCS = {}  # pid -> Popen, per-session process tracking
