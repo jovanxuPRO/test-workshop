@@ -1293,37 +1293,32 @@ API:
         if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
         text = r.json()["choices"][0]["message"]["content"].strip()
         logger.info(f"AI raw response ({len(text)} chars): {text[:200]}...")
-        if "```" in text: text = text.split("```")[1].lstrip("json").strip()
+        # Extract JSON from ```json blocks or raw array
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[1].strip()
+        # Find the JSON array
         import json as _j
-        # Try parsing, with fallbacks for malformed AI output
-        try:
-            return _j.loads(text)
-        except _j.JSONDecodeError:
-            # Try to extract array: find first [ and last ]
-            start = text.find("[")
-            end = text.rfind("]")
-            if start >= 0 and end > start:
-                try:
-                    return _j.loads(text[start:end+1])
-                except _j.JSONDecodeError:
-                    pass
-            # Try line-by-line extraction of objects
-            items = []
-            for line in text.split("\n"):
-                line = line.strip().rstrip(",")
-                if line.startswith("{") and line.endswith("}"):
-                    try: items.append(_j.loads(line))
-                    except _j.JSONDecodeError: pass
-            if items: return items
-            # Last resort: auto-close truncated JSON
-            fixed = text[start:end+1] if start>=0 and end>start else text
-            if fixed.rstrip().endswith(","): fixed = fixed.rstrip().rstrip(",") + "]"
-            if not fixed.rstrip().endswith("]"): fixed = fixed.rstrip() + "]"
-            # Close any unclosed string
-            if fixed.count('"') % 2 != 0: fixed += '"'
-            try: return _j.loads(fixed)
-            except _j.JSONDecodeError: pass
-            raise Exception(f"AI returned unparseable JSON: {text[:100]}")
+        start = text.find("[")
+        end = text.rfind("]")
+        if start >= 0 and end > start:
+            text = text[start:end+1]
+        # Try parsing with multiple fallbacks
+        for attempt in range(3):
+            try:
+                return _j.loads(text)
+            except _j.JSONDecodeError as je:
+                if attempt == 0:
+                    # Fix common AI JSON errors: trailing commas, unescaped quotes
+                    import re
+                    text = re.sub(r',\s*]', ']', text)  # trailing comma before ]
+                    text = re.sub(r',\s*}', '}', text)  # trailing comma before }
+                elif attempt == 1:
+                    # Try to fix unescaped newlines in strings
+                    text = text.replace('\n', '\\n')
+                else:
+                    raise Exception(f"JSON error at line {je.lineno}: {je.msg}")
 
 
 def _pattern_suggest(apis, seed):
