@@ -779,8 +779,8 @@ function onAIProviderChange() {
     const d = defaults[p];
     if (d) {
         if (d.model) document.getElementById('ai-model').value = d.model;
-        if (d.url) document.getElementById('ai-base-url').placeholder = d.url;
-        else document.getElementById('ai-base-url').placeholder = 'https://your-api.com/v1';
+        if (d.url) document.getElementById('ai-base-url').value = d.url;
+        else document.getElementById('ai-base-url').value = '';
     }
 }
 function getAIConfig() {
