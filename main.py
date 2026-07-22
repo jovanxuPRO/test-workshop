@@ -572,6 +572,7 @@ async def gnr(request: Request):
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "dir": os.path.basename(d),
             })
+            save_auto_tcs(body)
             return {"ok": f == 0, "total": t, "passed": p, "failed": f, "log": r.stdout[-5000:]}
         except Exception as ex:
             logger.error(f"gnr failed: {ex}", exc_info=True)
@@ -749,6 +750,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                         "rate": rate, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "dir": os.path.basename(d)}
                     save_hist_entry(e)
+                    save_auto_tcs(plan)
                     yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
                     RUN_PROCS.pop(pid, None)
                     break
@@ -1081,6 +1083,58 @@ def del_tc(cid: str):
     tcs = [tc for tc in load_tc() if tc["id"] != cid]
     save_tc(tcs)
     return {"ok": True}
+
+
+def save_auto_tcs(plan):
+    """Save auto-generated test cases to library with dedup by method+path."""
+    name = plan.get("name", "未命名")
+    existing = load_tc()
+    seen = {(tc.get("method",""), tc.get("path","")) for tc in existing}
+    added = 0
+    for api in plan.get("apis", []):
+        m = api.get("m", "GET")
+        p = safe_path(api.get("p", "/"))
+        if (m, p) in seen:
+            continue
+        seen.add((m, p))
+        max_id = max([int(tc.get("id","0")) for tc in existing] + [0])
+        existing.append({
+            "id": str(max_id + 1).zfill(3),
+            "module": safe(name),
+            "title": api.get("n", p),
+            "priority": "P1",
+            "method": m,
+            "path": p,
+            "expected": "HTTP状态码 < 500",
+            "steps": f"1. 发送 {m} {p}",
+            "status": "待执行",
+            "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        })
+        added += 1
+    for pg in plan.get("pages", []):
+        u = safe_path(pg.get("u", "/"))
+        pg_name = pg.get("na", u)
+        m = "GET"
+        if (m, u) in seen:
+            continue
+        seen.add((m, u))
+        max_id = max([int(tc.get("id","0")) for tc in existing] + [0])
+        existing.append({
+            "id": str(max_id + 1).zfill(3),
+            "module": safe(name),
+            "title": f"UI-{pg_name}",
+            "priority": "P1",
+            "method": m,
+            "path": u,
+            "expected": "页面可访问，无JS错误",
+            "steps": f"1. Playwright打开页面 {u}",
+            "status": "待执行",
+            "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        })
+        added += 1
+    if added:
+        save_tc(existing)
+        logger.info(f"Saved {added} auto-generated TCs from '{name}'")
 
 @app.get("/tc")
 def tc_page():
