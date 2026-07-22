@@ -73,7 +73,12 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
     </div>
 
     <div class="card">
-        <h2>2. API 接口</h2><div id="api-list"></div>
+        <h2>2. API 接口</h2>
+        <div style="overflow-x:auto">
+        <table style="width:100%;font-size:12px;margin-bottom:6px" id="api-table">
+            <thead><tr style="background:#f8f9fb"><th style="width:80px;padding:6px 8px;text-align:left">方法</th><th style="padding:6px 8px;text-align:left">路径</th><th style="padding:6px 8px;text-align:left">说明</th><th style="width:30px"></th></tr></thead>
+            <tbody id="api-list"></tbody>
+        </table></div>
         <button class="add-btn" onclick="addApi()">+ 添加接口</button>
         <button class="add-btn" id="tc-import-btn" onclick="loadTCs()" style="background:#5c6bc0;margin-left:4px">从用例库导入 (0)</button>
     </div>
@@ -91,7 +96,12 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
     </div></div>
 
     <div class="card">
-        <h2>3. Web 页面</h2><div id="pg-list"></div>
+        <h2>3. Web 页面</h2>
+        <div style="overflow-x:auto">
+        <table style="width:100%;font-size:12px;margin-bottom:6px" id="pg-table">
+            <thead><tr style="background:#f8f9fb"><th style="padding:6px 8px;text-align:left">路径</th><th style="padding:6px 8px;text-align:left">名称</th><th style="width:30px"></th></tr></thead>
+            <tbody id="pg-list"></tbody>
+        </table></div>
         <button class="add-btn" onclick="addPg()">+ 添加页面</button>
     </div>
 
@@ -101,8 +111,11 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <textarea id="p-rules" placeholder="首页HTTP 200\n响应时间<5秒\n数据一致"></textarea>
     </div>
 
-    <button class="btn btn-go" onclick="generate()">生成测试代码 & 执行</button>
-    <button class="btn" onclick="saveToTC()" style="width:100%;background:#5c6bc0;color:#fff;font-size:14px;padding:10px;margin-top:8px;border:none;border-radius:8px;cursor:pointer">保存到用例库</button>
+    <button class="btn" onclick="saveToTC()" style="width:100%;background:#5c6bc0;color:#fff;font-size:15px;padding:14px;border:none;border-radius:8px;cursor:pointer">第1步: 生成用例 → 保存到用例库</button>
+    <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-go" onclick="generate()" style="flex:1">直接执行</button>
+        <a href="/tc" class="btn" style="flex:1;background:#fff;color:#5c6bc0;border:2px solid #5c6bc0;text-align:center;padding:10px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">第2步: 在用例管理中勾选执行</a>
+    </div>
     <div id="results" class="hidden" style="margin-top:16px" aria-live="polite" aria-atomic="true"></div>
 </div>
 
@@ -199,33 +212,33 @@ function apply(k, el) {
     document.getElementById("p-url").value = t.url;
     document.getElementById("p-rules").value = t.rules;
     document.getElementById("api-list").innerHTML = "";
-    t.apis.forEach(a => { addApi(); const r = document.querySelectorAll(".api-row"); const l = r[r.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
+    t.apis.forEach(a => { addApi(); const rows = document.querySelectorAll("#api-list tr"); const l = rows[rows.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
     document.getElementById("pg-list").innerHTML = "";
-    t.pgs.forEach(p => { addPg(); const r = document.querySelectorAll(".pg-row"); const l = r[r.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; });
+    t.pgs.forEach(p => { addPg(); const r = document.querySelectorAll("#pg-list tr"); const l = r[r.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; });
     save();
 }
 
 // ===== ADD ROWS =====
 function addApi() {
-    const d = document.createElement("div"); d.className = "endpoint api-row";
-    d.innerHTML = `<select class="api-m" style="width:80px"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
-        <input class="api-p" placeholder="/api/path" oninput="save()">
-        <input class="api-n" placeholder="说明" oninput="save()">
-        <span class="del" onclick="this.parentElement.remove();save()">x</span>`;
-    document.getElementById("api-list").appendChild(d); save();
+    const tr = document.createElement("tr"); tr.className = "api-row";
+    tr.innerHTML = `<td><select class="api-m" style="width:80px"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select></td>
+        <td><input class="api-p" placeholder="/api/path" oninput="save()" style="width:100%"></td>
+        <td><input class="api-n" placeholder="说明" oninput="save()" style="width:100%"></td>
+        <td><span class="del" onclick="this.closest('tr').remove();save()" style="cursor:pointer;color:#ef5350">&times;</span></td>`;
+    document.getElementById("api-list").appendChild(tr); save();
 }
 function addPg() {
-    const d = document.createElement("div"); d.className = "endpoint pg-row";
-    d.innerHTML = `<input class="pg-u" placeholder="/page-path" oninput="save()">
-        <input class="pg-na" placeholder="页面名称" oninput="save()">
-        <span class="del" onclick="this.parentElement.remove();save()">x</span>`;
-    document.getElementById("pg-list").appendChild(d); save();
+    const tr = document.createElement("tr"); tr.className = "pg-row";
+    tr.innerHTML = `<td><input class="pg-u" placeholder="/page-path" oninput="save()" style="width:100%"></td>
+        <td><input class="pg-na" placeholder="页面名称" oninput="save()" style="width:100%"></td>
+        <td><span class="del" onclick="this.closest('tr').remove();save()" style="cursor:pointer;color:#ef5350">&times;</span></td>`;
+    document.getElementById("pg-list").appendChild(tr); save();
 }
 
 // ===== SAVE/RESTORE =====
 function save() {
-    const apis = []; document.querySelectorAll(".api-row").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
-    const pgs = []; document.querySelectorAll(".pg-row").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
+    const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
+    const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
     const d = {name: document.getElementById("p-name").value, url: document.getElementById("p-url").value, rules: document.getElementById("p-rules").value, apis, pgs, auth: document.getElementById("p-auth").value};
     try { localStorage.setItem("wiz", JSON.stringify(d)); } catch(e) {}
 }
@@ -233,8 +246,8 @@ function restore() {
     try {
         const d = JSON.parse(localStorage.getItem("wiz")); if (!d) return;
         document.getElementById("p-name").value = d.name||""; document.getElementById("p-url").value = d.url||""; document.getElementById("p-rules").value = d.rules||"";
-        document.getElementById("api-list").innerHTML = ""; (d.apis||[]).forEach(a => { addApi(); const r = document.querySelectorAll(".api-row"); const l = r[r.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
-        document.getElementById("pg-list").innerHTML = ""; (d.pgs||[]).forEach(p => { addPg(); const r = document.querySelectorAll(".pg-row"); const l = r[r.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; });
+        document.getElementById("api-list").innerHTML = ""; (d.apis||[]).forEach(a => { addApi(); const rows = document.querySelectorAll("#api-list tr"); const l = rows[rows.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
+        document.getElementById("pg-list").innerHTML = ""; (d.pgs||[]).forEach(p => { addPg(); const rows = document.querySelectorAll("#pg-list tr"); const l = rows[rows.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; });
         if (d.auth) { document.getElementById("p-auth").value = d.auth; toggleAuth(); }
     } catch(e) {}
 }
@@ -242,8 +255,8 @@ function restore() {
 // ===== GENERATE =====
 async function generate() {
     save();
-    const apis = []; document.querySelectorAll(".api-row").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
-    const pgs = []; document.querySelectorAll(".pg-row").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
+    const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
+    const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
     const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: document.getElementById("p-url").value.trim(), apis, pages: pgs, rules: document.getElementById("p-rules").value.split("\n").filter(l=>l.trim()), types: ["api","ui","data"], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value, time: new Date().toLocaleString()};
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
     hist.unshift(plan); if (hist.length > 20) hist = hist.slice(0,20); try { localStorage.setItem("plan_hist", JSON.stringify(hist)); } catch(e) {}
@@ -432,8 +445,8 @@ async function execHist() {
 let _tcs = [];
 async function saveToTC() {
     save();
-    const apis = []; document.querySelectorAll(".api-row").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
-    const pgs = []; document.querySelectorAll(".pg-row").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
+    const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
+    const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
     const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: document.getElementById("p-url").value.trim(), apis, pages: pgs};
     try {
         const r = await fetch('/api/save-tc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
@@ -472,7 +485,7 @@ function importSelectedTCs() {
         const tc = _tcs.find(t => t.id === cb.value);
         if (!tc) return;
         addApi();
-        const rows = document.querySelectorAll('.api-row');
+        const rows = document.querySelectorAll('#api-list tr');
         const r = rows[rows.length-1];
         r.querySelector('.api-m').value = tc.method||'GET';
         r.querySelector('.api-p').value = tc.path||'';
@@ -484,8 +497,8 @@ function importSelectedTCs() {
 // ===== INIT =====
 initTpls(); restore();
 if (!localStorage.getItem("wiz")) apply("task", document.querySelector('[data-k="task"]'));
-if (!document.querySelector(".api-row")) addApi();
-if (!document.querySelector(".pg-row")) addPg();
+if (!document.querySelector("#api-list tr")) addApi();
+if (!document.querySelector("#pg-list tr")) addPg();
 fetch('/api/tc').then(r=>r.json()).then(d=>{
     document.getElementById('tc-import-btn').textContent = '从用例库导入 (' + (d.cases||[]).length + ')';
 }).catch(()=>{});
