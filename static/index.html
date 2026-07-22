@@ -123,9 +123,8 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <h3 style="margin:0" id="case-preview-title">用例预览</h3>
             <span style="display:flex;gap:6px">
-                <button class="btn btn-sm" onclick="previewCases()" style="background:#fff;color:#5c6bc0;border:1px solid #5c6bc0;font-size:13px;padding:6px 16px" title="重新随机生成用例">重新生成</button>
+                <button class="btn btn-sm" onclick="previewCases()" style="background:#fff;color:#5c6bc0;border:1px solid #5c6bc0;font-size:13px;padding:6px 16px" title="AI 重新生成">重新生成</button>
                 <button class="btn btn-sm" onclick="execPreviewed()" style="background:#26a69a;color:#fff;font-size:13px;padding:6px 16px">执行选中</button>
-                <button class="btn btn-sm" id="ai-suggest-btn" onclick="aiSuggestMore()" style="background:#ff9800;color:#fff;font-size:13px;padding:6px 16px;display:none" title="AI 生成额外测试建议">AI 建议</button>
                 <button class="btn btn-sm" onclick="savePreviewed()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">保存到用例库</button>
             </span>
         </div>
@@ -542,21 +541,38 @@ function previewCases() {
     window._previewApis = apis; window._previewPgs = pgs;
     window._previewName = name;
     window._lockedCases = window._lockedCases || [];
-    // Build gen_code-exact preview (same formula as what will execute)
-    const methodTests = {GET:[{t:'可达性',pre:'服务运行中',exp:'HTTP 200/301/302/304'},{t:'响应体验证',pre:'无',exp:'响应体>0'},{t:'Content-Type',pre:'无',exp:'含content-type'},{t:'响应时间',pre:'网络通畅',exp:'<5秒'},{t:'HEAD请求',pre:'支持HEAD',exp:'<500'},{t:'分页参数',pre:'支持page',exp:'<500'},{t:'移动端UA',pre:'无',exp:'iPhone UA<500'},{t:'JSON Accept',pre:'无',exp:'<500'}],POST:[{t:'正常提交',pre:'无',exp:'<500'},{t:'空请求体',pre:'接口接收空body',exp:'<500'},{t:'非法JSON',pre:'接口解析JSON',exp:'<500'},{t:'Form表单',pre:'接收form-data',exp:'<500'}],PUT:[{t:'正常更新',pre:'无',exp:'<500'},{t:'空请求体',pre:'接口接收空body',exp:'<500'}],DELETE:[{t:'删除请求',pre:'资源存在',exp:'<500'}],PATCH:[{t:'部分更新',pre:'无',exp:'<500'},{t:'空请求体',pre:'接口接收空body',exp:'<500'}],HEAD:[{t:'HEAD可达',pre:'支持HEAD',exp:'<500'},{t:'响应头',pre:'无',exp:'headers非空'}]};
-    const uiTests=[{t:'页面加载',pre:'公网可访问',exp:'body可见,title非空'},{t:'JS无错误',pre:'无',exp:'无pageerror'},{t:'加载时间',pre:'网络<10s',exp:'<10秒'},{t:'移动端',pre:'无',exp:'375x812正常'},{t:'导航链接',pre:'有a标签',exp:'links>0'},{t:'静态资源',pre:'无',exp:'无4xx/5xx'}];
-    const unitNames=['服务可达性','响应时间基准','SSL证书','重定向跟踪','响应头完整','响应体大小','编码声明','并发请求'];
-    let rows='',num=0,priColor={P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0'};
-    apis.forEach((a,ai)=>{const tests=methodTests[a.m]||[{t:'可达性',pre:'服务运行中',exp:'<500'}];const ep=(a.p||'')==='/'||/\b(login|auth)\b/.test(a.p||'')?'P0':'P1';tests.forEach((t,ti)=>{num++;const pri=ti===0?ep:'P1';rows+=`<tr style="border-bottom:1px solid #eee"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="api_${ai}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock" data-key="a_${ai}_${ti}" onclick="toggleLock(this,'a_${ai}_${ti}')">🔓</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">${a.n||a.p}-${t.t}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[pri]};padding:6px 4px">${pri}</td><td style="font-size:10px;padding:6px 4px">${t.pre}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${a.m}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${a.p}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${t.exp}</td><td style="font-size:10px;padding:6px 4px">${a.m} ${a.p}</td><td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`})});
-    pgs.forEach((p,pi)=>{uiTests.forEach(t=>{num++;rows+=`<tr style="border-bottom:1px solid #eee"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="pg_${pi}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock" data-key="pg_${pi}_${num}" onclick="toggleLock(this,'pg_${pi}_${num}')">🔓</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">[UI] ${p.na}: ${t.t}</td><td style="font-size:10px;font-weight:600;color:#26a69a;padding:6px 4px">UI</td><td style="font-size:11px;font-weight:700;color:${priColor.P1};padding:6px 4px">P1</td><td style="font-size:10px;padding:6px 4px">${t.pre}</td><td style="font-family:monospace;font-size:10px;color:#26a69a;padding:6px 4px">GET</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${p.u}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${t.exp}</td><td style="font-size:10px;padding:6px 4px">page.goto ${p.u}</td><td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`})});
-    unitNames.forEach(t=>{num++;rows+=`<tr style="border-bottom:1px solid #eee"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="unit" checked></td><td style="padding:4px;text-align:center;font-size:14px">🔓</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">[Unit] ${t}</td><td style="font-size:10px;font-weight:600;color:#888;padding:6px 4px">Unit</td><td style="font-size:11px;font-weight:700;color:#888;padding:6px 4px">P1</td><td style="font-size:10px;padding:6px 4px">服务运行中</td><td style="font-family:monospace;font-size:10px;color:#888;padding:6px 4px">-</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">-</td><td style="font-size:10px;color:#27ae60;padding:6px 4px"><500</td><td style="font-size:10px;padding:6px 4px">httpx.get(B)</td><td style="font-size:10px;color:#888;padding:6px 4px">无</td></tr>`});
-    document.getElementById('case-preview-list').innerHTML = rows;
-    document.getElementById("case-preview-title").textContent = "用例预览 (" + num + " 条)";
+    document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:24px;color:#5c6bc0;font-size:13px"><span id="ai-progress-text">AI 正在分析 API 结构...</span><br><span id="ai-progress-dots" style="font-size:20px;letter-spacing:4px"></span></td></tr>';
+    document.getElementById('case-preview-title').textContent = '用例预览 (生成中...)';
     document.getElementById('case-preview').classList.remove('hidden');
     document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
-    // AI suggestions button — adds bonus cases from LLM
-    var aiBtn = document.getElementById("ai-suggest-btn");
-    if (aiBtn) aiBtn.style.display = '';
+    let _dots = 0;
+    const _progressTimer = setInterval(() => {
+        _dots = (_dots + 1) % 4;
+        const el = document.getElementById('ai-progress-dots');
+        if (el) el.textContent = '.'.repeat(_dots + 1);
+        const pt = document.getElementById('ai-progress-text');
+        if (pt && _dots === 0) pt.textContent = 'AI 正在生成测试用例...';
+        else if (pt && _dots === 2) pt.textContent = 'AI 正在优化用例内容...';
+    }, 600);
+    const aiCfg = {model:'',base_url:''};
+    try { const c=JSON.parse(localStorage.getItem('ai_profiles')||'[]');const a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{};aiCfg.model=a.model||'';aiCfg.base_url=a.base_url||''; } catch(e) {}
+    fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url})})
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
+        clearInterval(_progressTimer);
+        const suggestions = d.suggestions||[];
+        window._previewSuggestions = suggestions;
+        let rows='',num=0;const priColor={P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0'};
+        suggestions.forEach((s,i)=>{
+            num++;
+            const lk=window._lockedCases&&window._lockedCases.includes('s_'+i);
+            rows+=`<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">${s.title}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[s.priority]||'#888'};padding:6px 4px">${s.priority||'P1'}</td><td style="font-size:10px;padding:6px 4px">${s.precondition||'无'}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td><td style="font-size:10px;padding:6px 4px">${s.steps||''}</td><td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||'无'}</td></tr>`;
+        });
+        document.getElementById('case-preview-list').innerHTML = rows;
+        document.getElementById("case-preview-title").textContent = "用例预览 (" + num + " 条)";
+    }).catch(e=>{
+        clearInterval(_progressTimer);
+        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: '+e.message+'<br><small>请确认 AI Key 已配置</small></td></tr>';
+    });
 }
 function toggleAllLocks() {
     const locks = document.querySelectorAll('.pv-lock');
@@ -657,37 +673,14 @@ async function _runGenerate(plan) {
         document.getElementById("r-log").textContent = "网络错误: " + e.message;
     }
 }
-async function aiSuggestMore() {
-    const apis = window._previewApis||[];
-    if (!apis.length) { alert('请先添加 API 接口'); return; }
-    const aiCfg = {model:'',base_url:''};
-    try { const c=JSON.parse(localStorage.getItem('ai_profiles')||'[]');const a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{};aiCfg.model=a.model||'';aiCfg.base_url=a.base_url||''; } catch(e) {}
-    document.getElementById('ai-suggest-btn').textContent = '生成中...';
-    document.getElementById('ai-suggest-btn').disabled = true;
-    try {
-        const r = await fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url})});
-        if(!r.ok) throw new Error('HTTP '+r.status);
-        const d = await r.json();
-        const suggestions = d.suggestions||[];
-        if (!suggestions.length) { alert('AI 未返回建议，请确认 Key 已配置'); return; }
-        let extra = '';
-        suggestions.forEach((s,i) => {
-            extra += `<tr style="border-bottom:1px solid #eee;background:#fff8e1"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="ai_${i}" checked></td><td style="padding:4px;text-align:center;font-size:14px">💡</td><td style="font-family:monospace;font-size:10px;padding:6px 4px;color:#ff9800">AI-${String(i+1).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${window._previewName||''}</td><td style="font-weight:600;padding:6px 4px">${s.title}</td><td style="font-size:10px;font-weight:600;color:#ff9800;padding:6px 4px">AI建议</td><td style="font-size:11px;font-weight:700;color:#ff9800;padding:6px 4px">${s.priority}</td><td style="font-size:10px;padding:6px 4px">${s.precondition}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td><td style="font-size:10px;padding:6px 4px">${s.steps||''}</td><td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||'无'}</td></tr>`;
-        });
-        document.getElementById('case-preview-list').insertAdjacentHTML('beforeend', extra);
-    } catch(e) { alert('AI 请求失败: '+e.message); }
-    document.getElementById('ai-suggest-btn').textContent = 'AI 建议';
-    document.getElementById('ai-suggest-btn').disabled = false;
-}
 async function savePreviewed() {
-    const apis = window._previewApis||[];
-    const pgs = window._previewPgs||[];
-    if (!apis.length && !pgs.length) { alert('没有可保存的用例'); return; }
+    const suggestions = window._previewSuggestions||[];
+    if (!suggestions.length) { alert('没有可保存的用例，请先生成预览'); return; }
     const plan = {
         name: window._previewName||'未命名',
         url: document.getElementById("p-url").value.trim()||'http://localhost',
-        apis: apis,
-        pages: pgs,
+        apis: suggestions.map(s => ({m:s.method||'GET', p:s.path||'/', n:s.title||s.path})),
+        pages: window._previewPgs||[],
     };
     try {
         const r = await fetch('/api/save-tc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(plan)});
