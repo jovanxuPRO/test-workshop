@@ -661,7 +661,12 @@ function previewCases() {
                 }
             }
         });
-        document.getElementById('case-preview-title').textContent = '用例预览 (' + num + '条, 含8条基础测试)';
+        // Calculate gen_code execution count
+        const methodCounts = {GET:8,POST:4,PUT:2,DELETE:1,PATCH:2,HEAD:2};
+        let execCount = 8; // unit tests
+        apis.forEach(a => { execCount += methodCounts[a.m] || 1; });
+        pgs.forEach(() => { execCount += 6; });
+        document.getElementById('case-preview-title').textContent = '用例预览 (' + num + '条建议, 实际执行 ' + execCount + ' 条');
     }).catch(e=>{
         clearInterval(_progressTimer);
         document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
@@ -765,24 +770,9 @@ function toggleLock(el, key) {
 async function execPreviewed() {
     const checks = document.querySelectorAll('.pv-check:checked');
     if (!checks.length) { alert('请勾选要执行的用例'); return; }
-    const suggestions = window._previewSuggestions||[];
-    let apiSet = new Set();
-    checks.forEach(cb => {
-        const idx = parseInt(cb.value);
-        if (!isNaN(idx)) {
-            const s = suggestions[idx];
-            if (s) apiSet.add(s.method + '|' + s.path);
-        }
-    });
-    let apis = [...apiSet].map(k => { const [m,p] = k.split('|'); return {m,p,n:p}; });
-    let pgs = window._previewPgs||[];
-    // Also collect checked UI pages
-    checks.forEach(cb => {
-        if (String(cb.value).startsWith('pg_')) {
-            const pi = parseInt(cb.value.replace('pg_',''));
-            if (!isNaN(pi) && pgs[pi]) { /* already included via apiSet */ }
-        }
-    });
+    // Use original APIs/pages — gen_code generates its own test methods
+    const apis = window._previewApis||[];
+    const pgs = window._previewPgs||[];
     if (!apis.length && !pgs.length) { alert('没有可执行的用例'); return; }
     const url = document.getElementById("p-url").value.trim() || 'http://localhost';
     const types = ['api','unit'];
