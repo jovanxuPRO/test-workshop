@@ -136,6 +136,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
                 <th style="width:55px">编号</th>
                 <th style="width:80px">模块</th>
                 <th style="min-width:180px">用例标题</th>
+                <th style="width:45px">类型</th>
                 <th style="width:50px">优先级</th>
                 <th style="min-width:120px">前置条件</th>
                 <th style="width:55px">方法</th>
@@ -539,7 +540,7 @@ function previewCases() {
     window._previewApis = apis; window._previewPgs = pgs;
     window._previewName = name;
     window._lockedCases = window._lockedCases || [];  // persist locks across regenerations
-    document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="12" style="text-align:center;padding:24px;color:#5c6bc0;font-size:13px"><span id="ai-progress-text">🤖 AI 正在分析 API 结构...</span><br><span id="ai-progress-dots" style="font-size:20px;letter-spacing:4px"></span></td></tr>';
+    document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:24px;color:#5c6bc0;font-size:13px"><span id="ai-progress-text">🤖 AI 正在分析 API 结构...</span><br><span id="ai-progress-dots" style="font-size:20px;letter-spacing:4px"></span></td></tr>';
     document.getElementById('case-preview-title').textContent = '用例预览 (生成中...)';
     document.getElementById('case-preview').classList.remove('hidden');
     document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
@@ -592,6 +593,7 @@ function previewCases() {
                 <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
                 <td style="padding:6px 4px;font-size:11px">${name}</td>
                 <td style="font-weight:600;padding:6px 4px">${s.title}</td>
+                <td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td>
                 <td style="font-size:11px;font-weight:700;color:${priColor[s.priority]};padding:6px 4px">${s.priority}</td>
                 <td style="font-size:10px;padding:6px 4px">${s.precondition}</td>
                 <td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td>
@@ -618,6 +620,7 @@ function previewCases() {
                     <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
                     <td style="padding:6px 4px;font-size:11px">${name}</td>
                     <td style="font-weight:600;padding:6px 4px">[UI] ${p.na}: ${t.title}</td>
+                    <td style="font-size:10px;font-weight:600;color:#26a69a;padding:6px 4px">UI</td>
                     <td style="font-size:11px;font-weight:700;color:${priColor[t.pri]};padding:6px 4px">${t.pri}</td>
                     <td style="font-size:10px;padding:6px 4px">${t.pre}</td>
                     <td style="font-family:monospace;font-size:10px;color:#26a69a;padding:6px 4px">GET</td>
@@ -642,7 +645,7 @@ function previewCases() {
         document.getElementById('case-preview-title').textContent = '用例预览 (' + num + '条)';
     }).catch(e=>{
         clearInterval(_progressTimer);
-        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
+        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
     });
 }
 function endpointPriority(path) {
