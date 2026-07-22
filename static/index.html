@@ -240,7 +240,7 @@ async function generate() {
     document.getElementById("results").innerHTML = `<div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <h2 id="res-title" style="margin:0">${escName} — 执行中...</h2>
-            <button class="btn" style="background:#ef5350;color:#fff;padding:8px 16px;font-size:12px" id="stop-btn" onclick="fetch('/api/stop',{method:'POST'});if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}document.getElementById('r-bar').style.background='#ef5350';document.getElementById('res-title').textContent+=' (已停止)'">停止</button>
+            <button class="btn" id="stop-btn" style="background:#ef5350;color:#fff;padding:8px 16px;font-size:12px">停止</button>
         </div>
         <div class="metrics" style="cursor:pointer" onclick="window.open('/api/report')">
             <div class="m"><span class="v" style="color:#3498db" id="r-total">-</span><span class="l">总计</span></div>
@@ -253,6 +253,23 @@ async function generate() {
         <div class="log" id="r-log">执行中...</div>
     </div>`;
     document.getElementById("results").scrollIntoView({behavior:"smooth"});
+    window._lastPlan = plan;
+    var btn = document.getElementById("stop-btn");
+    btn._state = "running";
+    btn.onclick = function(){
+        if (btn._state === "running") {
+            fetch('/api/stop',{method:'POST'});
+            if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}
+            btn.textContent = "继续";
+            btn.style.background = "#5c6bc0";
+            btn._state = "stopped";
+            document.getElementById("r-bar").style.background = "#ef5350";
+            document.getElementById("res-title").textContent = plan.name + " — 已停止";
+        } else if (btn._state === "stopped") {
+            btn.style.display = "none";
+            generate();
+        }
+    };
 
     // SSE stream
     try {
@@ -282,7 +299,7 @@ async function generate() {
         } else if (d.t === "done") {
             evt.close();
             window._activeEvt = null;
-            var sb = document.getElementById("stop-btn"); if(sb) sb.style.display = "none";
+            var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; }
             // Fetch precise numbers from report
             setTimeout(async ()=>{
                 try{
@@ -302,7 +319,7 @@ async function generate() {
         }
         } catch(e) { /* skip malformed SSE messages */ }
     };
-    evt.onerror = function() { evt.close(); window._activeEvt = null; var sb = document.getElementById("stop-btn"); if(sb) sb.style.display = "none"; document.getElementById("r-bar").style.background = "#ef5350"; document.getElementById("res-title").textContent = plan.name + " — 连接中断"; };
+    evt.onerror = function() { evt.close(); window._activeEvt = null; var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; } document.getElementById("r-bar").style.background = "#ef5350"; document.getElementById("res-title").textContent = plan.name + " — 连接中断"; };
     } catch(e) {
         document.getElementById("r-bar").style.width = "100%";
         document.getElementById("r-bar").style.background = "#ef5350";
