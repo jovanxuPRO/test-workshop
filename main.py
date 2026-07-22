@@ -1271,24 +1271,15 @@ async def _call_llm(apis, seed, model, base_url):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""你是ISTQB高级测试工程师。根据以下API列表，为每个API生成丰富的测试用例。要求全面覆盖：
+    prompt = f"""根据API列表生成测试用例JSON数组。
 
 API:
 {api_lines}
 
-为每个API生成6-12条用例，包括：
-- P0: 正常场景、核心业务、认证授权（2-3条）
-- P1: 异常输入、边界条件、权限校验（2-4条）
-- P2: 并发/性能、安全注入(XSS/SQL)、兼容性（2-4条）
-
-每条用例JSON: title, priority(P0/P1/P2), expected(具体状态码+响应内容), precondition(实际前置条件), steps(详细步骤), method, path
-总量不限，越多越好。
-
-请严格输出以下格式（用```json包裹）：
-```json
-[{{"title":"...","priority":"P0","expected":"...","precondition":"...","steps":"...","method":"GET","path":"/api/users"}},...]
-```"""
-    async with httpx.AsyncClient(timeout=30) as client:
+每个API 4-8条用例，覆盖：P0核心场景、P1边界异常、P2安全兼容。
+每条: title, priority, expected, precondition, steps, method, path
+用```json包裹输出。"""
+    async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
