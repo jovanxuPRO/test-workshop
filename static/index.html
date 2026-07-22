@@ -841,8 +841,9 @@ function importSelectedTCs() {
     save();
 }
 // ===== INIT =====
-initTpls(); restore();
-if (!localStorage.getItem("wiz")) apply("baidu", document.querySelector('[data-k="baidu"]'));
+initTpls();
+apply("baidu", document.querySelector('[data-k="baidu"]'));
+restore();  // Override with saved state if exists
 if (!document.querySelector("#api-list tr")) addApi();
 if (!document.querySelector("#pg-list tr")) addPg();
 
