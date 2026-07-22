@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+generated_tests/
+*.tmp
+*.bak
+.pytest_cache/

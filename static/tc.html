@@ -110,18 +110,20 @@ function render() {
     sel.innerHTML = '<option value="">全部模块</option>' + mods.map(m => `<option>${m}</option>`).join('');
 
     document.getElementById('count').textContent = filtered.length + ' / ' + cases.length + ' 个用例';
-    document.getElementById('tbody').innerHTML = filtered.map(c => `
+    document.getElementById('tbody').innerHTML = filtered.map(c => {
+        const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        return `
         <tr>
-            <td style="font-family:monospace;font-size:11px">${c.id}</td>
-            <td>${c.module}</td>
-            <td><strong>${c.title}</strong></td>
-            <td><span class="badge badge-${c.priority.toLowerCase()}">${c.priority}</span></td>
-            <td style="font-family:monospace;font-size:11px">${c.method||''}</td>
-            <td style="font-family:monospace;font-size:11px">${c.path||''}</td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.expected}</td>
-            <td><span class="badge badge-${c.status==='通过'?'pass':c.status==='失败'?'fail':'pending'}">${c.status}</span></td>
+            <td style="font-family:monospace;font-size:11px">${e(c.id)}</td>
+            <td>${e(c.module)}</td>
+            <td><strong>${e(c.title)}</strong></td>
+            <td><span class="badge badge-${c.priority.toLowerCase()}">${e(c.priority)}</span></td>
+            <td style="font-family:monospace;font-size:11px">${e(c.method||'')}</td>
+            <td style="font-family:monospace;font-size:11px">${e(c.path||'')}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(c.expected)}</td>
+            <td><span class="badge badge-${c.status==='通过'?'pass':c.status==='失败'?'fail':'pending'}">${e(c.status)}</span></td>
             <td style="white-space:nowrap">
-                <button class="btn btn-sm btn-primary" onclick="openEdit('${c.id}')">编辑</button>
+                <button class="btn btn-sm btn-primary" onclick="openEdit('${e(c.id)}')">编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="delTC('${c.id}')">删除</button>
             </td>
         </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;padding:40px;color:#888">暂无用例，点击「+ 新增用例」添加</td></tr>';

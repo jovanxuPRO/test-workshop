@@ -1,6 +1,6 @@
-fastapi
-uvicorn
-httpx
-pytest
-pytest-asyncio
-playwright
+fastapi>=0.95.0
+uvicorn>=0.22.0
+httpx>=0.24.0
+pytest>=7.3.0
+pytest-asyncio>=0.21.0
+playwright>=1.33.0

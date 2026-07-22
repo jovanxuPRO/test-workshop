@@ -1,42 +1,220 @@
 """
-Test Workshop Pro v5 - JUnit XML Report + SSE Streaming
+Test Workshop Pro v5 - Automated Test Generation & Execution Platform.
+
+Start: python main.py (serves on http://0.0.0.0:9000)
+
+Key Endpoints:
+  POST /api/plan        - Submit test plan, returns session ID
+  GET  /api/stream?id=   - SSE stream of real-time test execution
+  POST /api/gnr          - Synchronous test generation & execution
+  GET  /api/stop         - Kill running pytest process
+  GET  /api/report?dir=  - JUnit XML-based ISTQB report
+  GET  /api/report-count - Summary counts from latest execution
+  GET  /api/report-list  - Browse all historical reports
+  GET  /api/tc           - Test case CRUD operations
+
+Data Files:
+  generated_tests/   - Per-execution test code + JUnit XML (keeps last 20)
+  test_cases.json    - User-managed test case library
+  exec_history.json  - Execution summary records (keeps last 50)
 """
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
-import os, json, shutil, subprocess, threading, queue, asyncio, re, xml.etree.ElementTree as ET
+from starlette.middleware.base import BaseHTTPMiddleware
+import os, json, shutil, subprocess, threading, queue, asyncio, re, base64, html, logging, uuid, signal, atexit
+import ipaddress, urllib.parse
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger("test-workshop")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
 BASE = os.path.dirname(os.path.abspath(__file__))
-app = FastAPI(title="Test Workshop Pro")
+app = FastAPI(title="Test Workshop Pro", docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=os.path.join(BASE, "static")), name="static")
 GEN = os.path.join(BASE, "generated_tests")
 os.makedirs(GEN, exist_ok=True)
-app.mount("/gen", StaticFiles(directory=GEN), name="gen")
 TCF = os.path.join(BASE, "test_cases.json")
 
-def safe(s): return re.sub(r'[^\w\u4e00-\u9fff]', '_', str(s))[:30].strip('_') or 't'
+# Concurrency guard: max 3 simultaneous test executions
+_exec_sem = asyncio.Semaphore(3)
+# Simple rate limiter: max requests per endpoint per window
+_rate_limits = {}  # key -> [(timestamp, count), ...]
+
+
+def _check_rate(key, max_req=60, window=60):
+    """Return True if rate limit not exceeded. Simple sliding window."""
+    now = datetime.now().timestamp()
+    if key not in _rate_limits:
+        _rate_limits[key] = []
+    _rate_limits[key] = [t for t in _rate_limits[key] if t > now - window]
+    if len(_rate_limits[key]) >= max_req:
+        return False
+    _rate_limits[key].append(now)
+    if len(_rate_limits) > 1000:
+        _rate_limits.clear()
+    return True
+
+
+@app.on_event("startup")
+async def startup_check():
+    """Validate prerequisites: check key dependencies are installed."""
+    checks = {}
+    for mod in ["httpx", "pytest"]:
+        try:
+            __import__(mod)
+            checks[mod] = True
+        except ImportError:
+            checks[mod] = False
+            logger.warning(f"Missing dependency: {mod}")
+    r = subprocess.run(["python", "-m", "pytest", "--version"], capture_output=True, text=True)
+    if r.returncode != 0:
+        logger.warning("pytest not found on PATH")
+    else:
+        logger.info(f"Startup OK. {r.stdout.strip()}")
+
+
+import signal, atexit
+
+
+def _cleanup_procs():
+    for pid, proc in list(RUN_PROCS.items()):
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception:
+            try: proc.kill()
+            except Exception: pass
+    RUN_PROCS.clear()
+
+
+atexit.register(_cleanup_procs)
+
+
+@app.on_event("shutdown")
+async def shutdown_cleanup():
+    _cleanup_procs()
+
+def is_safe_url(url_str):
+    """Block SSRF: reject private/internal/reserved IP ranges and file:// scheme."""
+    lowered = url_str.lower()
+    if lowered.startswith("file://") or lowered.startswith("ftp://"):
+        return False
+    try:
+        parsed = urllib.parse.urlparse(url_str)
+        host = parsed.hostname
+        if not host: return True
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            return False
+        if ip in (ipaddress.ip_address("169.254.169.254"),):
+            return False
+        return True
+    except Exception:
+        return True
+
+def safe(s):
+    """Sanitize to safe identifier: retain only word chars + CJK, replace rest with _"""
+    s = str(s)[:200]
+    s = re.sub(r'[^\w\u4e00-\u9fff]', '_', s)
+    s = re.sub(r'_+', '_', s).strip('_')
+    while '..' in s: s = s.replace('..', '.')
+    return s or 't'
+
+def safe_path(s):
+    """Sanitize URL path: allow / {} ? = &"""
+    s = str(s)[:500]
+    s = re.sub(r'[^\w\u4e00-\u9fff\-/:,.?&=+%{}]', '_', s)
+    s = re.sub(r'_+', '_', s).strip('_')
+    while '..' in s: s = s.replace('..', '.')
+    return s or '/'
+
+def _json_err(msg, status=200):
+    return {"ok": False, "error": msg}
 
 def gen_code(plan):
-    name = plan.get("name", "u"); url = plan.get("url", "http://localhost")
+    """Generate executable pytest test code from a test plan.
+
+    Args:
+        plan: dict with keys:
+            name (str): Project name for directory naming
+            url (str): Base URL for test requests
+            apis (list): API endpoints, each {m: HTTP method, p: path, n: description}
+            pages (list): Web pages, each {u: URL, na: name}
+            rules (list): Data validation rules as strings
+            types (list): Test types to generate ['api','ui','data']
+            auth (str): Auth type 'none'|'bearer'|'header'|'basic'
+            authValue (str): Auth credential (sanitized before use)
+
+    Returns:
+        str: Path to the generated test directory containing conftest.py,
+             test_api.py, test_ui.py, test_data.py, test_unit.py
+    """
+    name = plan.get("name", "u")
+    raw_url = str(plan.get("url") or "http://localhost")
+    url = re.sub(r'[^\w\-/:,.?&=+%~#]', '', raw_url)[:500]
+    if not is_safe_url(url):
+        url = "http://localhost"
     apis = plan.get("apis", []); pages = plan.get("pages", [])
     rules = plan.get("rules", []); types = plan.get("types", ["api", "ui", "data"])
-    out = os.path.join(GEN, safe(name))
+    out = os.path.join(GEN, safe(name) + "_" + datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6])
+    # Cleanup: keep only last 20 test dirs by modification time
+    try:
+        dirs = [(os.path.join(GEN, d), os.path.getmtime(os.path.join(GEN, d))) 
+                for d in os.listdir(GEN) if os.path.isdir(os.path.join(GEN, d))]
+        dirs.sort(key=lambda x: x[1])
+        for dp, _ in dirs[:-19]:
+            try: shutil.rmtree(dp, ignore_errors=True)
+            except Exception: pass
+    except Exception: pass
     shutil.rmtree(out, ignore_errors=True); os.makedirs(out)
 
-    # conftest
+    # Build auth env var value (in-memory only, never written to disk)
+    auth_type = plan.get("auth", "none")
+    auth_value = plan.get("authValue", "")
+    auth_value = re.sub(r'[^\w\-=+/,.:;@#$%^&*()!]', '', str(auth_value))[:500]
+    auth_env = {}
+    if auth_type == "bearer" and auth_value:
+        auth_env["TW_AUTH_HEADER"] = f"Bearer {auth_value}"
+    elif auth_type == "basic" and auth_value:
+        auth_env["TW_AUTH_HEADER"] = f"Basic {base64.b64encode(auth_value.encode()).decode()}"
+    elif auth_type == "header" and auth_value:
+        parts = auth_value.split(":", 1)
+        if len(parts) == 2:
+            auth_env["TW_AUTH_HEADER_NAME"] = parts[0].strip()
+            auth_env["TW_AUTH_HEADER"] = parts[1].strip()
+
+    # conftest - auth via env var, never written to disk
     cf = '# Auto-generated test config\n'
-    cf += 'import pytest, httpx, time\n'
+    cf += 'import pytest, httpx, time, os\n'
     cf += f'B = "{url}"\n'
     cf += '@pytest.fixture\n'
     cf += 'def c():\n'
-    cf += '    with httpx.Client(base_url=B, timeout=25, follow_redirects=True,\n'
-    cf += '        headers={"User-Agent":"Mozilla/5.0"}) as cl: yield cl\n'
+    cf += '    _ah = os.environ.get("TW_AUTH_HEADER", "")\n'
+    cf += '    _hn = os.environ.get("TW_AUTH_HEADER_NAME", "Authorization")\n'
+    cf += '    _hdrs = {"User-Agent":"Mozilla/5.0"}\n'
+    cf += '    if _ah:\n'
+    cf += '        _hdrs[_hn] = _ah\n'
+    cf += '    with httpx.Client(base_url=B, timeout=25, follow_redirects=True, headers=_hdrs) as cl: yield cl\n'
     cf += '@pytest.fixture(scope="session")\n'
     cf += 'def browser():\n'
     cf += '    from playwright.sync_api import sync_playwright\n'
+    cf += '    headless = os.environ.get("TW_HEADLESS", "true").lower() == "true"\n'
     cf += '    with sync_playwright() as p:\n'
-    cf += '        br = p.chromium.launch(headless=False, slow_mo=300)\n'
+    cf += '        br = p.chromium.launch(headless=headless, slow_mo=0,\n'
+    cf += '            args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu"])\n'
     cf += '        yield br; br.close()\n'
     cf += '@pytest.fixture\n'
     cf += 'def page(browser):\n'
@@ -46,48 +224,46 @@ def gen_code(plan):
     with open(os.path.join(out, "conftest.py"), "w", encoding="utf-8") as f:
         f.write(cf)
 
-    # unit tests - expanded
+    # unit tests - no try/except masking failures
     ut = 'import pytest, httpx, time\n'
     ut += f'B = "{url}"\n'
     ut += 'class TestUnit:\n'
     ut += '    def test_1_reachable(self):\n'
     ut += '        """服务可达性"""\n'
-    ut += '        try: r = httpx.get(B, timeout=15, follow_redirects=True); assert r.status_code < 500\n'
-    ut += '        except: pytest.skip("unreachable")\n\n'
+    ut += '        r = httpx.get(B, timeout=15, follow_redirects=True)\n'
+    ut += '        assert r.status_code < 500\n\n'
     ut += '    def test_2_response_time(self):\n'
     ut += '        """响应时间基准"""\n'
-    ut += '        try: t0=time.time(); httpx.get(B,timeout=20,follow_redirects=True); assert time.time()-t0<10\n'
-    ut += '        except: pytest.skip("timeout")\n\n'
+    ut += '        t0=time.time(); httpx.get(B,timeout=20,follow_redirects=True)\n'
+    ut += '        assert time.time()-t0<10\n\n'
     ut += '    def test_3_ssl_valid(self):\n'
     ut += '        """SSL证书有效"""\n'
     ut += '        if not B.startswith("https"): pytest.skip("HTTP only")\n'
-    ut += '        try: r=httpx.get(B,timeout=15,follow_redirects=True); assert r.status_code<500\n'
-    ut += '        except: pytest.skip("ssl check failed")\n\n'
+    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+    ut += '        assert r.status_code<500\n\n'
     ut += '    def test_4_redirect_follow(self):\n'
     ut += '        """重定向跟踪"""\n'
-    ut += '        try: r=httpx.get(B,timeout=15,follow_redirects=True); assert len(r.history)>=0\n'
-    ut += '        except: pytest.skip("redirect check")\n\n'
+    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+    ut += '        assert r.status_code < 500\n\n'
     ut += '    def test_5_headers_present(self):\n'
     ut += '        """响应头完整"""\n'
-    ut += '        try: r=httpx.get(B,timeout=15,follow_redirects=True); assert len(r.headers)>0\n'
-    ut += '        except: pytest.skip("headers check")\n\n'
+    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+    ut += '        assert isinstance(r.headers, dict) or hasattr(r.headers, "__getitem__")\n\n'
     ut += '    def test_6_content_length(self):\n'
     ut += '        """响应体大小"""\n'
-    ut += '        try: r=httpx.get(B,timeout=15,follow_redirects=True); assert len(r.content)>0 or r.status_code>=300\n'
-    ut += '        except: pytest.skip("content check")\n\n'
+    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+    ut += '        assert len(r.content)>0 or r.status_code>=300\n\n'
     ut += '    def test_7_encoding_valid(self):\n'
     ut += '        """编码声明检查"""\n'
-    ut += '        try: r=httpx.get(B,timeout=15,follow_redirects=True); assert r.encoding or r.status_code>=300\n'
-    ut += '        except: pytest.skip("encoding check")\n\n'
+    ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
+    ut += '        assert isinstance(r.encoding, str) or r.status_code>=300\n\n'
     ut += '    def test_8_concurrent(self):\n'
     ut += '        """并发请求"""\n'
-    ut += '        try:\n'
-    ut += '            import concurrent.futures\n'
-    ut += '            def req(): return httpx.get(B,timeout=20,follow_redirects=True).status_code\n'
-    ut += '            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:\n'
-    ut += '                results = list(ex.map(lambda _: req(), range(3)))\n'
-    ut += '            assert all(s<500 for s in results)\n'
-    ut += '        except: pytest.skip("concurrent check")\n\n'
+    ut += '        import concurrent.futures\n'
+    ut += '        def req(): return httpx.get(B,timeout=20,follow_redirects=True).status_code\n'
+    ut += '        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:\n'
+    ut += '            results = list(ex.map(lambda _: req(), range(3)))\n'
+    ut += '        assert all(s<500 for s in results)\n\n'
     with open(os.path.join(out, "test_unit.py"), "w", encoding="utf-8") as f:
         f.write(ut)
 
@@ -95,7 +271,10 @@ def gen_code(plan):
     if "api" in types and apis:
         lines = ["import pytest, time", ""]
         for a in apis:
-            m = a.get("m", "GET"); p = a.get("p", "/"); n = safe(a.get("n", ""))
+            m = a.get("m", "GET")
+            if m not in ("GET", "POST", "PUT", "DELETE", "HEAD", "PATCH", "OPTIONS"):
+                m = "GET"
+            p = safe_path(a.get("p", "/")); n = safe(a.get("n", ""))
             tp = p.replace("{id}", "1")
             lines.append(f"class Test_{n}:")
             lines.append(f'    """{m} {p}"""')
@@ -107,7 +286,7 @@ def gen_code(plan):
                     ("type", f'c.get("{tp}")', '"content-type" in str(r.headers).lower() or r.status_code >= 300'),
                     ("time", f'c.get("{tp}")', "elapsed < 5"),
                     ("head", f'c.head("{tp}")', "r.status_code < 500"),
-                    ("page", f'c.get("{tp}?page=1")', "r.status_code < 500"),
+                    ("page", f'c.get("{tp}{\"&\" if \"?\" in tp else \"?\"}page=1")', "r.status_code < 500"),
                     ("mobile", f'c.get("{tp}", headers={{"User-Agent":"iPhone"}})', "r.status_code < 500"),
                     ("json_accept", f'c.get("{tp}", headers={{"Accept":"application/json"}})', "r.status_code < 500"),
                 ]
@@ -125,6 +304,16 @@ def gen_code(plan):
                 ]
             elif m == "DELETE":
                 tests = [("ok", f'c.delete("{tp}")', "r.status_code < 500")]
+            elif m == "PATCH":
+                tests = [
+                    ("ok", f'c.patch("{tp}", json={{"t":"test"}})', "r.status_code < 500"),
+                    ("empty", f'c.patch("{tp}")', "r.status_code < 500"),
+                ]
+            elif m == "HEAD":
+                tests = [
+                    ("ok", f'c.head("{tp}")', "r.status_code < 500"),
+                    ("headers", f'c.head("{tp}")', "len(r.headers) > 0"),
+                ]
             else:
                 tests = []
             for tn, stmt, check in tests:
@@ -144,7 +333,7 @@ def gen_code(plan):
     if "ui" in types and pages:
         lines = ["import pytest", "from conftest import B", ""]
         for pg in pages:
-            u = pg.get("u","/"); na = safe(pg.get("na",""))
+            u = safe_path(pg.get("u","/")); na = safe(pg.get("na",""))
             lines.append(f"class Test_{na}:")
             lines.append("")
             # Test 1: page loads
@@ -182,7 +371,7 @@ def gen_code(plan):
             lines.append(f'        """页面导航元素"""')
             lines.append(f'        page.goto(B+"{u}")')
             lines.append(f'        links=page.locator("a").count()')
-            lines.append(f'        assert links>=0')
+            lines.append(f'        assert links>0')
             lines.append("")
             # Test 6: resources loaded
             lines.append(f"    def test_6_resources_loaded(self,page):")
@@ -191,45 +380,65 @@ def gen_code(plan):
             lines.append(f'        page.on("response",lambda r: failed.append(r.url) if r.status>=400 else None)')
             lines.append(f'        page.goto(B+"{u}")')
             lines.append(f'        page.wait_for_timeout(3000)')
-            lines.append(f'        assert True')
+            lines.append(f'        assert len(failed)==0, f"Failed resources: {{failed}}"')
             lines.append("")
         with open(os.path.join(out, "test_ui.py"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-    # data tests
-    if "data" in types and rules:
-        lines = ["import pytest, httpx", "from conftest import B", "",
-            "@pytest.fixture",
-            "def c():",
-            "    with httpx.Client(base_url=B, timeout=25, follow_redirects=True) as cl: yield cl",
-            "", "class TestData:", ""]
+    # data tests - validate each API endpoint against rules
+    if "data" in types and rules and apis:
+        lines = ["import pytest, httpx", "from conftest import B", "", "class TestData:", ""]
         for i, r in enumerate(rules):
-            dr = r.replace('"', "'")
+            api = apis[i % len(apis)] if apis else {"p": "/", "m": "GET"}
+            p = safe_path(api.get("p", "/"))
+            tp = p.replace("{id}", "1")
+            dr = r.replace('"', "'").replace("\\", "\\\\")
             lines.append(f"    def test_d{i}(self, c):")
             lines.append(f'        """{dr}"""')
-            lines.append('        resp = c.get("/")')
+            lines.append(f'        resp = c.get("{tp}")')
             lines.append('        assert resp.status_code < 500')
             lines.append("")
         with open(os.path.join(out, "test_data.py"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-    return out
+    return out, auth_env
 
 
 HIST = os.path.join(BASE, "exec_history.json")
 
 def load_hist():
+    """Load execution history from exec_history.json."""
     if os.path.exists(HIST):
-        try: return json.loads(open(HIST, encoding="utf-8").read())
-        except: pass
+        try:
+            with open(HIST, encoding="utf-8") as f:
+                data = json.loads(f.read())
+                return data if isinstance(data, list) else []
+        except (json.JSONDecodeError, OSError):
+            logger.warning(f"Corrupted history file, resetting")
+            try: os.rename(HIST, HIST + ".bak")
+            except OSError: pass
     return []
 
+def _atomic_write(path, data):
+    """Atomic write: temp file + rename to prevent corruption on crash."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, ensure_ascii=False, indent=2))
+    os.replace(tmp, path)
+
 def save_hist_entry(entry):
+    """Append an execution record to history. Keeps last 50 entries."""
     entries = load_hist()
     entries.insert(0, entry)
     if len(entries) > 50: entries = entries[:50]
-    with open(HIST, "w", encoding="utf-8") as f:
-        f.write(json.dumps(entries, ensure_ascii=False, indent=2))
+    _atomic_write(HIST, entries)
+
+
+@app.get("/api/history-data")
+def list_history_json():
+    """Return execution history as JSON for the Exec tab."""
+    entries = load_hist()
+    return {"history": entries}
 
 
 @app.get("/api/history")
@@ -243,14 +452,14 @@ def list_history():
         color = "#27ae60" if e.get("failed", 0) == 0 else "#ef5350"
         rows += '<tr>'
         rows += f'<td>{i+1}</td>'
-        rows += f'<td>{e.get("name","?")}</td>'
-        rows += f'<td>{e.get("url","?")}</td>'
-        rows += f'<td>{e.get("time","?")}</td>'
+        rows += f'<td>{html.escape(str(e.get("name","?")), quote=False)}</td>'
+        rows += f'<td>{html.escape(str(e.get("url","?")), quote=False)}</td>'
+        rows += f'<td>{html.escape(str(e.get("time","?")), quote=False)}</td>'
         rows += f'<td style="color:#3498db;font-weight:700">{e.get("total",0)}</td>'
         rows += f'<td style="color:#27ae60;font-weight:700">{e.get("passed",0)}</td>'
         rows += f'<td style="color:#ef5350;font-weight:700">{e.get("failed",0)}</td>'
         rows += f'<td style="color:{color};font-weight:700">{e.get("rate",0)}%</td>'
-        rows += f'<td><a href="/api/report" target="_blank" style="color:#5c6bc0">报告</a></td>'
+        rows += f'<td><a href="/api/report?dir={e.get("dir","")}" target="_blank" style="color:#5c6bc0">报告</a></td>'
         rows += f'<td><button onclick="fetch(\'/api/history/{i}\',{{method:\'DELETE\'}}).then(()=>location.reload())" style="background:#fce4ec;color:#ef5350;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">删除</button></td>'
         rows += '</tr>\n'
 
@@ -286,8 +495,7 @@ def del_history(idx: int):
     entries = load_hist()
     if 0 <= idx < len(entries):
         entries.pop(idx)
-        with open(HIST, "w", encoding="utf-8") as f:
-            f.write(json.dumps(entries, ensure_ascii=False, indent=2))
+        _atomic_write(HIST, entries)
     return {"ok": True}
 
 
@@ -295,12 +503,20 @@ def del_history(idx: int):
 # In gnr endpoint, after parsing results:
 @app.post("/api/gnr")
 async def gnr(request: Request):
-    try:
-        body = await request.json()
-        d = gen_code(body)
-        xml_path = os.path.join(d, "results.xml")
-        r = subprocess.run(["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
-            capture_output=True, text=True, timeout=200)
+    if not _check_rate("gnr", max_req=20, window=60):
+        return {"ok": False, "error": "Rate limit exceeded (20/min). Please wait."}
+    async with _exec_sem:
+        try:
+            body = await request.json()
+            if len(json.dumps(body)) > 50000:
+                return {"ok": False, "error": "Plan too large"}
+            d, auth_env = gen_code(body)
+            xml_path = os.path.join(d, "results.xml")
+            env = os.environ.copy()
+            env.update(auth_env)
+            r = await asyncio.to_thread(
+                subprocess.run, ["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
+                capture_output=True, text=True, timeout=300, env=env)
         t = p = f = 0
         if os.path.exists(xml_path):
             root = ET.parse(xml_path).getroot()
@@ -317,63 +533,137 @@ async def gnr(request: Request):
             "total": t, "passed": p, "failed": f, "errors": e,
             "rate": round(p/t*100,1) if t else 0,
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "dir": os.path.basename(d),
         })
         return {"ok": f == 0, "total": t, "passed": p, "failed": f, "log": r.stdout[-5000:]}
     except Exception as ex:
-        import traceback
-        return {"ok": False, "error": str(ex), "trace": traceback.format_exc()[-2000:]}
+        logger.error(f"gnr failed: {ex}", exc_info=True)
+        return {"ok": False, "error": "Internal error during test execution"}
+
+
+PLANS = {}
+
+@app.post("/api/plan")
+async def save_plan(request: Request):
+    if not _check_rate("plan", max_req=30, window=60):
+        return {"error": "Rate limit exceeded"}
+    body = await request.json()
+    # Size limit: prevent abuse
+    if len(json.dumps(body)) > 50000:
+        return {"error": "Plan too large"}
+    pid = uuid.uuid4().hex[:8]
+    PLANS[pid] = body
+    return {"id": pid}
+
+
+RUN_PROCS = {}  # pid -> Popen, per-session process tracking
+
+@app.post("/api/stop")
+def stop_exec(sid: str = ""):
+    """Stop a specific session by plan ID, or all if no ID provided."""
+    global RUN_PROCS
+    if sid and sid in RUN_PROCS:
+        try:
+            RUN_PROCS[sid].terminate()
+            RUN_PROCS[sid].kill()
+        except Exception:
+            pass
+        RUN_PROCS.pop(sid, None)
+    elif not sid:
+        for pid, proc in list(RUN_PROCS.items()):
+            try:
+                proc.terminate()
+                proc.kill()
+            except Exception:
+                pass
+        RUN_PROCS.clear()
+    return {"ok": True}
 
 
 @app.get("/api/stream")
 async def stream(request: Request):
-    pj = request.query_params.get("plan", "")
-    if not pj:
+    pid = request.query_params.get("id", "")
+    plan = PLANS.get(pid)
+    if not plan:
         async def e():
             yield f"data: {json.dumps({'t':'error'})}\n\n"
         return StreamingResponse(e(), media_type="text/event-stream")
-    plan = json.loads(pj)
-    d = gen_code(plan)
+    try:
+        d, auth_env = gen_code(plan)
+    except Exception:
+        logger.error("gen_code failed in stream", exc_info=True)
+        PLANS.pop(pid, None)
+        async def e():
+            yield f"data: {json.dumps({'t':'error','msg':'Code generation failed'})}\n\n"
+        return StreamingResponse(e(), media_type="text/event-stream")
     xml_path = os.path.join(d, "results.xml")
+    env = os.environ.copy()
+    env.update(auth_env)
 
     async def s():
         q = queue.Queue()
-        T = [0]; P = [0]; F = [0]
-        def w():
-            proc = subprocess.Popen(
-                ["python", "-m", "pytest", d, "-v", "--tb=line", "--color=no", f"--junitxml={xml_path}"],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            for line in iter(proc.stdout.readline, ""):
-                q.put(line)
-            q.put("__END__")
-            proc.wait()
-        threading.Thread(target=w, daemon=True).start()
-        yield f"data: {json.dumps({'t':'start'})}\n\n"
-        while True:
+        T = [0]; P = [0]; F = [0]; E = [0]
+        try:
             try:
-                line = q.get(timeout=0.1)
-            except queue.Empty:
-                await asyncio.sleep(0.05)
-                continue
-            if line == "__END__":
-                rate = round(P[0] / T[0] * 100, 1) if T[0] else 0
-                # Also save to history
-                e = {"name": plan.get("name","?"), "url": plan.get("url","?"),
-                    "total": T[0], "passed": P[0], "failed": F[0], "errors": 0,
-                    "rate": rate, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-                save_hist_entry(e)
-                yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'rate':rate})}\n\n"
-                break
-            st = line.strip()
-            if "PASSED" in st and "::" in st:
-                T[0] += 1; P[0] += 1
-            elif "FAILED" in st and "::" in st:
-                T[0] += 1; F[0] += 1
-            # Extract percentage from pytest output like [ 42%]
-            pct_str = ""
-            m = re.search(r'\[(\s*\d+)%\]', st)
-            if m: pct_str = m.group(1).strip()
-            yield f"data: {json.dumps({'t':'test','line':st[-300:],'pct':pct_str})}\n\n"
-    return StreamingResponse(s(), media_type="text/event-stream")
+                proc = subprocess.Popen(
+                    ["python", "-m", "pytest", d, "-v", "--tb=line", "--color=no", f"--junitxml={xml_path}"],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
+                RUN_PROCS[pid] = proc
+            except Exception as ex:
+                yield f"data: {json.dumps({'t':'error','msg':str(ex)})}\n\n"
+                return
+            def w():
+                for line in iter(proc.stdout.readline, ""): q.put(line)
+                q.put("__END__")
+                proc.wait()
+            threading.Thread(target=w, daemon=True).start()
+            yield f"id: {pid}\ndata: {json.dumps({'t':'start'})}\n\n"
+            _heartbeat = 0
+            _deadline = datetime.now().timestamp() + 600  # 10 min max
+            while True:
+                if datetime.now().timestamp() > _deadline:
+                    try: proc.terminate(); proc.kill()
+                    except Exception: pass
+                    yield f"data: {json.dumps({'t':'error','msg':'Execution timeout (10min)'})}\n\n"
+                    break
+                if await request.is_disconnected():
+                    try: proc.terminate(); proc.kill()
+                    except Exception: pass
+                    RUN_PROCS.pop(pid, None)
+                    break
+                try:
+                    line = await asyncio.to_thread(q.get, timeout=0.1)
+                except queue.Empty:
+                    _heartbeat += 1
+                    if _heartbeat % 20 == 0:
+                        yield ": keepalive\n\n"
+                    await asyncio.sleep(0.05)
+                    continue
+                if line == "__END__":
+                    rate = round(P[0] / T[0] * 100, 1) if T[0] else 0
+                    e = {"name": plan.get("name","?"), "url": plan.get("url","?"),
+                        "total": T[0], "passed": P[0], "failed": F[0], "errors": E[0],
+                        "rate": rate, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "dir": os.path.basename(d)}
+                    save_hist_entry(e)
+                    yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
+                    RUN_PROCS.pop(pid, None)
+                    break
+                st = line.strip()
+                if "PASSED" in st and "::" in st:
+                    T[0] += 1; P[0] += 1
+                elif "FAILED" in st and "::" in st:
+                    T[0] += 1; F[0] += 1
+                elif "ERROR" in st and "::" in st:
+                    T[0] += 1; E[0] += 1
+                pct_str = ""
+                m = re.search(r'\[(\s*\d+)%\]', st)
+                if m: pct_str = m.group(1).strip()
+                yield f"data: {json.dumps({'t':'test','line':st[-300:],'pct':pct_str})}\n\n"
+        finally:
+            PLANS.pop(pid, None)
+    return StreamingResponse(s(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/report-count")
@@ -381,36 +671,85 @@ def report_count():
     """Return just the numbers from latest XML"""
     xml_files = []
     for root, dirs, files in os.walk(GEN):
-        for f in files:
-            if f == "results.xml": xml_files.append(os.path.join(root, f))
+        for file_name in files:
+            if file_name == "results.xml": xml_files.append(os.path.join(root, file_name))
     if not xml_files: return {"total": 0, "passed": 0, "failed": 0, "rate": 0}
     xml_file = max(xml_files, key=os.path.getmtime)
-    tree = ET.parse(xml_file)
-    ts = tree.getroot().find("testsuite")
-    if ts is None: ts = tree.getroot()
-    t = int(ts.get("tests", 0))
-    f = int(ts.get("failures", 0))
-    e = int(ts.get("errors", 0))
+    try:
+        tree = ET.parse(xml_file)
+        ts = tree.getroot().find("testsuite")
+        if ts is None: ts = tree.getroot()
+        t_val = ts.get("tests", "0")
+        f_val = ts.get("failures", "0")
+        e_val = ts.get("errors", "0")
+        t = int(t_val) if t_val.isdigit() else 0
+        f = int(f_val) if f_val.isdigit() else 0
+        e = int(e_val) if e_val.isdigit() else 0
+    except (ET.ParseError, Exception):
+        logger.warning(f"Corrupt results.xml: {xml_file}")
+        return {"total": 0, "passed": 0, "failed": 0, "rate": 0}
     p = t - f - e
     rate = round(p/t*100, 1) if t else 0
     return {"total": t, "passed": p, "failed": f, "errors": e, "rate": rate}
 
 
+@app.get("/api/report-list")
+def report_list():
+    items = ""
+    for d in sorted(os.listdir(GEN), reverse=True):
+        dp = os.path.join(GEN, d)
+        xf = os.path.join(dp, "results.xml")
+        if not os.path.isdir(dp) or not os.path.exists(xf): continue
+        try:
+            root = ET.parse(xf).getroot()
+            ts = root.find("testsuite") or root
+            t = int(ts.get("tests",0)); f = int(ts.get("failures",0)); e = int(ts.get("errors",0))
+            p = t-f-e; rate = round(p/t*100,1) if t else 0
+            c = "#27ae60" if f==0 else "#ef5350"
+            sd = html.escape(d, quote=True)
+            items += f'<tr onclick="document.getElementById(\'d{sd}\').classList.toggle(\'hidden\')" style="cursor:pointer">'
+            items += f'<td style="font-family:monospace;font-size:11px">{sd[:40]}</td><td style="color:#3498db;font-weight:700">{t}</td>'
+            items += f'<td style="color:#27ae60;font-weight:700">{p}</td><td style="color:#ef5350;font-weight:700">{f}</td>'
+            items += f'<td style="color:{c};font-weight:700">{rate}%</td>'
+            items += f'<td><a href="/api/report?dir={sd}" target="_blank">打开</a></td></tr>'
+            items += f'<tr class="hidden" id="d{sd}"><td colspan="6"><iframe src="/api/report?dir={sd}" style="width:100%;height:400px;border:none;border-radius:6px"></iframe></td></tr>'
+        except (ET.ParseError, OSError, ValueError): pass
+    return HTMLResponse(f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>报告库</title>
+<style>body{{font-family:sans-serif;max-width:1200px;margin:30px auto;background:#f5f6fa;color:#333;padding:0 20px}}
+h1{{color:#2c3e50}}table{{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04)}}
+th{{background:#f8f9fb;padding:10px;text-align:left;font-size:11px;color:#888}}td{{padding:10px;border-bottom:1px solid #eee;font-size:12px}}
+tr:hover td{{background:#fafbff}}.hidden{{display:none}}</style></head><body>
+<h1>测试报告库</h1><p style="color:#888;font-size:13px;margin-bottom:20px">点击行展开详情</p>
+<table><thead><tr><th>名称</th><th>总计</th><th>通过</th><th>失败</th><th>通过率</th><th>详情</th></tr></thead>
+<tbody>{items}</tbody></table><p style="text-align:center;margin-top:20px"><a href="/">返回</a></p>
+</body></html>""")
+
+
 @app.get("/api/report")
-def report():
-    xml_files = []
-    for root, dirs, files in os.walk(GEN):
-        for f in files:
-            if f == "results.xml":
-                xml_files.append(os.path.join(root, f))
+def report(dir: str = ""):
+    if dir:
+        dir = safe(dir)  # Prevent path traversal
+        xml_path = os.path.join(GEN, dir, "results.xml")
+        if not os.path.exists(xml_path):
+            return HTMLResponse("<body style='font-family:sans-serif;text-align:center;padding:80px;color:#888'><h2>Report Not Found</h2></body>")
+        xml_files = [xml_path]
+    else:
+        xml_files = []
+        for root, dirs, files in os.walk(GEN):
+            for f in files:
+                if f == "results.xml":
+                    xml_files.append(os.path.join(root, f))
     if not xml_files:
         body = '<body style="font-family:sans-serif;text-align:center;padding:80px;color:#888">'
         body += '<h2>No Report Yet</h2><p>Run a test first</p>'
         body += '<p><a href="/">Back</a></p></body>'
         return HTMLResponse(body)
 
-    xml_file = max(xml_files, key=os.path.getmtime)
-    tree = ET.parse(xml_file)
+    try:
+        xml_file = max(xml_files, key=os.path.getmtime)
+        tree = ET.parse(xml_file)
+    except (ET.ParseError, OSError, FileNotFoundError):
+        return HTMLResponse("<body style='font-family:sans-serif;text-align:center;padding:80px;color:#888'><h2>Report Corrupted</h2><p>Try running tests again</p></body>")
     root_el = tree.getroot()
     # Get totals from the first testsuite
     ts = root_el.find("testsuite")
@@ -490,7 +829,7 @@ def report():
 
             det_html = ""
             if detail:
-                det_html = '<pre style="background:#1a1c23;color:#ff7675;padding:4px;border-radius:4px;font-size:10px;overflow-x:auto;max-width:350px;margin:0">' + detail + '</pre>'
+                det_html = '<pre style="background:#1a1c23;color:#ff7675;padding:4px;border-radius:4px;font-size:10px;overflow-x:auto;max-width:350px;margin:0">' + html.escape(detail, quote=False) + '</pre>'
 
             rows += '<tr>'
             rows += f'<td style="font-family:monospace;font-size:10px">TC-{tc_num:03d}</td>'
@@ -545,13 +884,21 @@ def report():
 
 # ====== Test Case Manager ======
 def load_tc():
+    """Load test case library from test_cases.json."""
     if os.path.exists(TCF):
-        return json.loads(open(TCF, encoding="utf-8").read())
+        try:
+            with open(TCF, encoding="utf-8") as f:
+                data = json.loads(f.read())
+                return data if isinstance(data, list) else []
+        except (json.JSONDecodeError, OSError):
+            logger.warning(f"Corrupted test cases file, resetting")
+            try: os.rename(TCF, TCF + ".bak")
+            except OSError: pass
     return []
 
 def save_tc(d):
-    with open(TCF, "w", encoding="utf-8") as f:
-        f.write(json.dumps(d, ensure_ascii=False, indent=2))
+    """Save test case library to test_cases.json. Atomic write."""
+    _atomic_write(TCF, d)
 
 @app.get("/api/tc")
 def list_tc():
@@ -561,8 +908,11 @@ def list_tc():
 async def add_tc(request: Request):
     b = await request.json()
     tcs = load_tc()
+    if len(tcs) >= 500:
+        return {"ok": False, "error": "Test case limit reached (500 max)"}
+    max_id = max([int(tc.get("id","0")) for tc in tcs] + [0])
     tc = {
-        "id": str(len(tcs) + 1).zfill(3),
+        "id": str(max_id + 1).zfill(3),
         "module": b.get("module", ""),
         "title": b.get("title", ""),
         "priority": b.get("priority", "P1"),

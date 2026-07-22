@@ -41,11 +41,11 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
 <body>
 <nav class="nav">
     <strong>测试工坊 Pro</strong>
-    <a class="on" onclick="tab('plan')">新建方案</a>
-    <a onclick="tab('exec')">执行</a>
-    <a href="/api/history" target="_blank">执行历史</a>
-    <a href="/api/report" target="_blank">测试报告</a>
-    <a href="/tc" target="_blank">用例管理</a>
+    <a class="on" role="button" tabindex="0" onclick="tab('plan')" onkeydown="if(event.key==='Enter')tab('plan')">新建方案</a>
+    <a role="button" tabindex="0" onclick="tab('exec')" onkeydown="if(event.key==='Enter')tab('exec')">执行</a>
+    <a href="/api/history" target="_blank" rel="noopener noreferrer">执行历史</a>
+    <a href="/api/report-list" target="_blank" rel="noopener noreferrer">测试报告</a>
+    <a href="/tc" target="_blank" rel="noopener noreferrer">用例管理</a>
 </nav>
 
 <div class="main">
@@ -55,29 +55,41 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <h2>1. 选择模板 & 项目信息</h2>
         <div class="templates" id="tpls"></div>
         <div class="row">
-            <div><label>项目名称</label><input id="p-name" placeholder="被测项目名称"></div>
-            <div><label>Base URL</label><input id="p-url" placeholder="https://example.com"></div>
+            <div><label for="p-name">项目名称</label><input id="p-name" placeholder="被测项目名称"></div>
+            <div><label for="p-url">Base URL</label><input id="p-url" placeholder="https://example.com"></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+            <div><label for="p-auth">认证方式</label><select id="p-auth" onchange="toggleAuth()" style="width:100%">
+                <option value="none">无需认证</option>
+                <option value="header">Custom Header</option>
+                <option value="bearer">Bearer Token</option>
+                <option value="basic">Basic Auth</option>
+            </select></div>
+            <div id="auth-value-group" style="display:none" aria-live="polite">
+                <label for="p-auth-value">认证值 <span style="color:#ef5350;font-size:10px">(仅内存存储)</span></label>
+                <input id="p-auth-value" placeholder="Token/Cookie值" type="password" style="width:100%">
+            </div>
         </div>
     </div>
 
     <div class="card">
         <h2>2. API 接口</h2><div id="api-list"></div>
-        <div class="add-btn" onclick="addApi()">+ 添加接口</div>
+        <button class="add-btn" onclick="addApi()">+ 添加接口</button>
     </div>
 
     <div class="card">
         <h2>3. Web 页面</h2><div id="pg-list"></div>
-        <div class="add-btn" onclick="addPg()">+ 添加页面</div>
+        <button class="add-btn" onclick="addPg()">+ 添加页面</button>
     </div>
 
     <div class="card">
         <h2>4. 数据规则</h2>
-        <label>每行一条规则</label>
+        <label for="p-rules">每行一条规则</label>
         <textarea id="p-rules" placeholder="首页HTTP 200\n响应时间<5秒\n数据一致"></textarea>
     </div>
 
     <button class="btn btn-go" onclick="generate()">生成测试代码 & 执行</button>
-    <div id="results" class="hidden" style="margin-top:16px"></div>
+    <div id="results" class="hidden" style="margin-top:16px" aria-live="polite" aria-atomic="true"></div>
 </div>
 
 <!-- EXEC -->
@@ -87,7 +99,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <select id="hist-sel" style="width:100%" onchange="onHist()"><option value="">-- 选择 --</option></select>
         <button class="btn btn-primary btn-go" id="btn-hist" onclick="execHist()" disabled style="margin-top:10px">执行</button>
     </div>
-    <div class="card hidden" id="dash">
+    <div class="card hidden" id="dash" aria-live="polite">
         <h2 id="dash-title">实时面板</h2>
         <div class="metrics" style="cursor:pointer" onclick="window.open('/api/report')">
             <div class="m"><span class="v" style="color:#3498db" id="m-total">0</span><span class="l">总计</span></div>
@@ -99,6 +111,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <div class="bar"><div class="bar-f" id="dash-bar" style="width:0%;background:#5c6bc0"></div></div>
         <div class="log" id="dash-log">等待执行...</div>
     </div>
+    <div class="card" id="exec-log-list" style="max-height:400px;overflow-y:auto"></div>
 </div>
 </div>
 
@@ -148,7 +161,10 @@ const TPLS = {
         pgs:[], rules:"posts返回100条\n每条含userId/id/title/body\nPOST返回201\nPUT返回200"},
 };
 
-// ===== TAB =====
+function toggleAuth() {
+    document.getElementById("auth-value-group").style.display = 
+        document.getElementById("p-auth").value === "none" ? "none" : "block";
+}
 function tab(t) {
     ["plan","exec"].forEach(x => document.getElementById("tab-"+x).classList.toggle("hidden", x!==t));
     document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("on", a.textContent.includes(t==="plan"?"新建":"执行")));
@@ -158,7 +174,7 @@ function tab(t) {
 // ===== TEMPLATES =====
 function initTpls() {
     document.getElementById("tpls").innerHTML = Object.keys(TPLS).map(k =>
-        `<span class="tpl" data-k="${k}" onclick="apply('${k}',this)">${TPLS[k].name}</span>`
+        `<button class="tpl" data-k="${k}" onclick="apply('${k}',this)">${TPLS[k].name}</button>`
     ).join("");
 }
 function apply(k, el) {
@@ -196,8 +212,8 @@ function addPg() {
 function save() {
     const apis = []; document.querySelectorAll(".api-row").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
     const pgs = []; document.querySelectorAll(".pg-row").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
-    const d = {name: document.getElementById("p-name").value, url: document.getElementById("p-url").value, rules: document.getElementById("p-rules").value, apis, pgs};
-    localStorage.setItem("wiz", JSON.stringify(d));
+    const d = {name: document.getElementById("p-name").value, url: document.getElementById("p-url").value, rules: document.getElementById("p-rules").value, apis, pgs, auth: document.getElementById("p-auth").value};
+    try { localStorage.setItem("wiz", JSON.stringify(d)); } catch(e) {}
 }
 function restore() {
     try {
@@ -205,6 +221,7 @@ function restore() {
         document.getElementById("p-name").value = d.name||""; document.getElementById("p-url").value = d.url||""; document.getElementById("p-rules").value = d.rules||"";
         document.getElementById("api-list").innerHTML = ""; (d.apis||[]).forEach(a => { addApi(); const r = document.querySelectorAll(".api-row"); const l = r[r.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
         document.getElementById("pg-list").innerHTML = ""; (d.pgs||[]).forEach(p => { addPg(); const r = document.querySelectorAll(".pg-row"); const l = r[r.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; });
+        if (d.auth) { document.getElementById("p-auth").value = d.auth; toggleAuth(); }
     } catch(e) {}
 }
 
@@ -213,13 +230,18 @@ async function generate() {
     save();
     const apis = []; document.querySelectorAll(".api-row").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
     const pgs = []; document.querySelectorAll(".pg-row").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
-    const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: document.getElementById("p-url").value.trim(), apis, pages: pgs, rules: document.getElementById("p-rules").value.split("\n").filter(l=>l.trim()), types: ["api","ui","data"], time: new Date().toLocaleString()};
+    const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: document.getElementById("p-url").value.trim(), apis, pages: pgs, rules: document.getElementById("p-rules").value.split("\n").filter(l=>l.trim()), types: ["api","ui","data"], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value, time: new Date().toLocaleString()};
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
-    hist.unshift(plan); if (hist.length > 20) hist = hist.slice(0,20); localStorage.setItem("plan_hist", JSON.stringify(hist));
+    hist.unshift(plan); if (hist.length > 20) hist = hist.slice(0,20); try { localStorage.setItem("plan_hist", JSON.stringify(hist)); } catch(e) {}
+    const escName = plan.name.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    let activeEvt = null;
 
     document.getElementById("results").classList.remove("hidden");
     document.getElementById("results").innerHTML = `<div class="card">
-        <h2 id="res-title">${plan.name} — 执行中...</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h2 id="res-title" style="margin:0">${escName} — 执行中...</h2>
+            <button class="btn" style="background:#ef5350;color:#fff;padding:8px 16px;font-size:12px" id="stop-btn" onclick="fetch('/api/stop',{method:'POST'});if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}document.getElementById('r-bar').style.background='#ef5350';document.getElementById('res-title').textContent+=' (已停止)'">停止</button>
+        </div>
         <div class="metrics" style="cursor:pointer" onclick="window.open('/api/report')">
             <div class="m"><span class="v" style="color:#3498db" id="r-total">-</span><span class="l">总计</span></div>
             <div class="m"><span class="v" style="color:#27ae60" id="r-passed">-</span><span class="l">通过</span></div>
@@ -233,10 +255,20 @@ async function generate() {
     document.getElementById("results").scrollIntoView({behavior:"smooth"});
 
     // SSE stream
-    const evt = new EventSource("/api/stream?plan=" + encodeURIComponent(JSON.stringify(plan)));
+    try {
+    const pr = await fetch('/api/plan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
+    const pd = await pr.json();
+    if (!pd.id) {
+        document.getElementById("r-bar").style.width = "100%";
+        document.getElementById("r-bar").style.background = "#ef5350";
+        document.getElementById("r-log").textContent = "错误: " + (pd.error || "Plan submission failed");
+        return;
+    }
+    const evt = new EventSource('/api/stream?id=' + pd.id);
+    window._activeEvt = evt;
     let tt = 0, pp = 0, ff = 0;
     evt.onmessage = function(e) {
-        const d = JSON.parse(e.data);
+        try { const d = JSON.parse(e.data);
         if (d.t === "test") {
             document.getElementById("r-log").textContent += d.line + "\n";
             if (d.line.includes("PASSED")) { pp++; tt++; }
@@ -259,34 +291,42 @@ async function generate() {
                     document.getElementById("r-failed").textContent = rd.failed;
                     document.getElementById("r-errors").textContent = rd.errors||0;
                     document.getElementById("r-rate").textContent = rd.rate + "%";
+                    document.getElementById("r-bar").style.background = (rd.failed===0 && rd.errors===0) ? "#27ae60" : "#ef5350";
+                    document.getElementById("res-title").textContent = plan.name + " — " + ((rd.failed===0 && rd.errors===0) ? "全部通过" : "部分失败");
                 }catch(e){}
             }, 500);
             document.getElementById("r-bar").style.width = "100%";
-            document.getElementById("r-bar").style.background = d.failed === 0 ? "#27ae60" : "#ef5350";
             document.getElementById("res-title").textContent = plan.name + " — " + (d.failed === 0 ? "全部通过" : "部分失败");
         }
+        } catch(e) { /* skip malformed SSE messages */ }
     };
-    evt.onerror = function() { evt.close(); document.getElementById("r-bar").style.background = "#ef5350"; };
+    evt.onerror = function() { evt.close(); window._activeEvt = null; document.getElementById("r-bar").style.background = "#ef5350"; document.getElementById("res-title").textContent = plan.name + " — 连接中断"; };
+    } catch(e) {
+        document.getElementById("r-bar").style.width = "100%";
+        document.getElementById("r-bar").style.background = "#ef5350";
+        document.getElementById("r-log").textContent = "网络错误: " + e.message;
+        document.getElementById("res-title").textContent = plan.name + " — 连接失败";
+    }
 }
 
 // ===== EXEC =====
 function loadHist() {
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
     document.getElementById("hist-sel").innerHTML = '<option value="">-- 选择方案 --</option>' + hist.map((p,i) => `<option value="${i}">${p.name} (${p.url}) - ${p.time||''}</option>`).join("");
-    // Also load execution logs
-    fetch('/api/history').then(r=>r.json()).then(d=>{
+    fetch('/api/history-data').then(r=>r.json()).then(d=>{
         const logs = d.history||[];
-        document.getElementById("exec-log-list").innerHTML = logs.length ? logs.map((l,i)=>`<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid #e8ecf1;border-radius:7px;margin-bottom:6px;font-size:12px">
-            <div><strong>${l.name}</strong> <span style="color:#888;font-size:11px">${l.time}</span></div>
+        const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        document.getElementById("exec-log-list").innerHTML = '<h3 style="margin-bottom:10px">执行历史 ('+logs.length+')</h3>' + (logs.length ? logs.map((l,i)=>`<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid #e8ecf1;border-radius:7px;margin-bottom:6px;font-size:12px">
+            <div><strong>${esc(l.name)}</strong> <span style="color:#888;font-size:11px">${esc(l.time||'')}</span></div>
             <div style="display:flex;gap:8px;align-items:center">
-                <span style="color:${l.failed>0?'#ef5350':'#27ae60'};font-weight:700">${l.passed}/${l.total} ${l.rate}%</span>
+                <span style="color:${(l.failed||0)>0?'#ef5350':'#27ae60'};font-weight:700">${l.passed||0}/${l.total||0} ${l.rate||0}%</span>
                 <button class="btn btn-sm" style="background:#fce4ec;color:#ef5350" onclick="delExec(${i})">删除</button>
-            </div></div>`).join('') : '<div style="text-align:center;color:#888;padding:20px">暂无执行记录</div>';
-    });
+            </div></div>`).join('') : '<div style="text-align:center;color:#888;padding:20px">暂无执行记录</div>');
+    }).catch(()=>{});
 }
 function delExec(i) { if(confirm('Delete?')){fetch('/api/history/'+i,{method:'DELETE'}).then(()=>loadHist());} }
 function onHist() { document.getElementById("btn-hist").disabled = document.getElementById("hist-sel").value === ""; }
-function execHist() {
+async function execHist() {
     let hist = JSON.parse(localStorage.getItem("plan_hist")||"[]");
     const plan = hist[document.getElementById("hist-sel").value];
     if (!plan) return;
@@ -298,10 +338,21 @@ function execHist() {
     document.getElementById("dash-bar").style.width = "5%";
     document.getElementById("dash-bar").style.background = "#5c6bc0";
 
-    const evt = new EventSource("/api/stream?plan=" + encodeURIComponent(JSON.stringify(plan)));
+    // POST plan first, get short ID
+    try {
+    const pr = await fetch('/api/plan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
+    const pd = await pr.json();
+    if (!pd.id) {
+        document.getElementById("dash-bar").style.width = "100%";
+        document.getElementById("dash-bar").style.background = "#ef5350";
+        document.getElementById("dash-log").textContent = "错误: " + (pd.error || "Plan submission failed");
+        return;
+    }
+    const evt = new EventSource('/api/stream?id=' + pd.id);
+    window._activeEvt = evt;
     let tt = 0, pp = 0, ff = 0;
     evt.onmessage = function(e) {
-        const d = JSON.parse(e.data);
+        try { const d = JSON.parse(e.data);
         if (d.t === "test") {
             document.getElementById("dash-log").textContent += d.line + "\n";
             if (d.line.includes("PASSED")) { pp++; tt++; }
@@ -322,8 +373,14 @@ function execHist() {
             document.getElementById("dash-bar").style.background = d.failed === 0 ? "#27ae60" : "#ef5350";
             document.getElementById("dash-title").textContent = plan.name + " — " + (d.failed === 0 ? "全部通过" : "部分失败");
         }
+        } catch(e) { /* skip malformed SSE */ }
     };
-    evt.onerror = function() { evt.close(); };
+    evt.onerror = function() { evt.close(); window._activeEvt = null; document.getElementById("dash-title").textContent = "连接中断"; document.getElementById("dash-bar").style.background = "#ef5350"; };
+    } catch(e) {
+        document.getElementById("dash-bar").style.width = "100%";
+        document.getElementById("dash-bar").style.background = "#ef5350";
+        document.getElementById("dash-title").textContent = "连接失败: " + e.message;
+    }
 }
 
 // ===== INIT =====
