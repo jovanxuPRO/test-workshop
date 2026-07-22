@@ -574,7 +574,7 @@ function previewCases() {
         aiCfg.base_url = active.base_url || '';
     } catch(e) {}
     fetch('/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apis, pages:pgs, seed, model:aiCfg.model, base_url:aiCfg.base_url})})
-    .then(r=>r.json()).then(d=>{
+    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
         clearInterval(_progressTimer);
         const suggestions = d.suggestions||[];
         window._previewSuggestions = suggestions;
@@ -806,6 +806,10 @@ async function _runGenerate(plan) {
     };
     try {
         const pr = await fetch('/api/plan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
+        if (!pr.ok) {
+            document.getElementById("r-log").textContent = "服务器错误: HTTP " + pr.status;
+            return;
+        }
         const pd = await pr.json();
         if (!pd.id) {
             document.getElementById("r-bar").style.background = "#ef5350";
