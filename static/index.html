@@ -594,7 +594,7 @@ function previewCases() {
         document.getElementById('case-preview-list').innerHTML = rows;
         document.getElementById('case-preview-title').textContent = '用例预览 (' + num + '条)';
     }).catch(e=>{
-        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
+        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
     });
 }
 function endpointPriority(path) {
