@@ -271,13 +271,19 @@ def gen_code(plan):
     # api tests
     if "api" in types and apis:
         lines = ["import pytest, time", ""]
-        for a in apis:
+        seen = set()
+        for ai, a in enumerate(apis):
             m = a.get("m", "GET")
             if m not in ("GET", "POST", "PUT", "DELETE", "HEAD", "PATCH", "OPTIONS"):
                 m = "GET"
             p = safe_path(a.get("p", "/")); n = safe(a.get("n", ""))
+            # Deduplicate class names: append index if collision
+            cn = n
+            if cn in seen:
+                cn = f"{n}_{ai}"
+            seen.add(cn)
             tp = p.replace("{id}", "1")
-            lines.append(f"class Test_{n}:")
+            lines.append(f"class Test_{cn}:")
             lines.append(f'    """{m} {p}"""')
             lines.append("")
             if m == "GET":
@@ -334,9 +340,14 @@ def gen_code(plan):
     # ui tests - expanded
     if "ui" in types and pages:
         lines = ["import pytest", "from conftest import B", ""]
-        for pg in pages:
+        ui_seen = set()
+        for pi, pg in enumerate(pages):
             u = safe_path(pg.get("u","/")); na = safe(pg.get("na",""))
-            lines.append(f"class Test_{na}:")
+            cna = na
+            if cna in ui_seen:
+                cna = f"{na}_{pi}"
+            ui_seen.add(cna)
+            lines.append(f"class Test_{cna}:")
             lines.append("")
             # Test 1: page loads
             lines.append(f"    def test_1_page_loaded(self,page):")
@@ -656,7 +667,7 @@ def _attach_existing(pid, proc, plan):
                     T[0] += 1; F[0] += 1
                 elif "ERROR" in st and "::" in st:
                     T[0] += 1; E[0] += 1
-                yield f"data: {json.dumps({'t':'test','line':st[-300:]})}\n\n"
+                yield f"data: {json.dumps({'t':'test','line':st[-300:].replace(chr(10),' ').replace(chr(13),'')})}\n\n"
         finally:
             RUN_PROCS.pop(pid, None)
             PLANS.pop(pid, None)
@@ -728,6 +739,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                 m = re.search(r'\[(\s*\d+)%\]', st)
                 if m: pct_str = m.group(1).strip()
                 out_line = f"{icon} {st[-280:]}" if icon else st[-300:]
+                out_line = out_line.replace("\n"," ").replace("\r","")
                 yield f"data: {json.dumps({'t':'test','line':out_line,'pct':pct_str})}\n\n"
         finally:
             # Keep PLANS alive on disconnect so reconnection works
