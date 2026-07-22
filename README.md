@@ -33,7 +33,6 @@ python main.py
 
 - **Task Manager** — RESTful CRUD API 全方位测试
 - **Baidu** — 13 API + 4 页面 + 10 规则全量
-- **GitHub API** — 用户/仓库/搜索/限流
 - **JSONPlaceholder** — 完整 REST 测试
 
 ### 用例管理中心 (`/tc`)
