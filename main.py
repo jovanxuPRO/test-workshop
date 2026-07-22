@@ -113,11 +113,30 @@ def is_safe_url(url_str):
     lowered = url_str.lower()
     if lowered.startswith("file://") or lowered.startswith("ftp://"):
         return False
+    # Block known internal hostname patterns before DNS resolution
+    blocked_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"}
     try:
         parsed = urllib.parse.urlparse(url_str)
         host = parsed.hostname
         if not host: return True
-        ip = ipaddress.ip_address(host)
+        if host.lower() in blocked_hosts or host.endswith(".local") or host.endswith(".internal"):
+            return False
+        # Check if host is an IP literal
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            # Hostname — resolve DNS and check the IP too
+            try:
+                resolved = subprocess.run(
+                    ["python", "-c", f"import socket; print(socket.gethostbyname({host!r}))"],
+                    capture_output=True, text=True, timeout=3)
+                ip_str = resolved.stdout.strip()
+                if ip_str:
+                    ip = ipaddress.ip_address(ip_str)
+                else:
+                    return True
+            except Exception:
+                return True
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
             return False
         if ip in (ipaddress.ip_address("169.254.169.254"),):
@@ -508,7 +527,12 @@ a{{color:#5c6bc0;text-decoration:none}}
 def del_history(idx: int):
     entries = load_hist()
     if 0 <= idx < len(entries):
-        entries.pop(idx)
+        entry = entries.pop(idx)
+        dir_name = entry.get("dir", "")
+        if dir_name:
+            dp = os.path.join(GEN, dir_name)
+            try: shutil.rmtree(dp, ignore_errors=True)
+            except Exception: pass
         _atomic_write(HIST, entries)
     return {"ok": True}
 
@@ -689,7 +713,8 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
                 RUN_PROCS[pid] = proc
             except Exception as ex:
-                yield f"data: {json.dumps({'t':'error','msg':str(ex)})}\n\n"
+                logger.error(f"Popen failed: {ex}", exc_info=True)
+                yield f"data: {json.dumps({'t':'error','msg':'Failed to start test process'})}\n\n"
                 return
             def w():
                 for line in iter(proc.stdout.readline, ""): q.put(line)
@@ -935,8 +960,8 @@ def report(dir: str = ""):
 
             rows += '<tr>'
             rows += f'<td style="font-family:monospace;font-size:10px">TC-{tc_num:03d}</td>'
-            rows += f'<td><strong>{mod_name}</strong></td>'
-            rows += f'<td>{file_type}</td>'
+            rows += f'<td><strong>{html.escape(mod_name, quote=False)}</strong></td>'
+            rows += f'<td>{html.escape(file_type, quote=False)}</td>'
             rows += f'<td style="font-size:10px">{precondition}</td>'
             rows += f'<td>{scn}</td>'
             rows += f'<td style="font-size:11px">{expected}</td>'
