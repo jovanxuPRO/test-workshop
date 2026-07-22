@@ -143,8 +143,9 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
 <div id="tab-ai" class="hidden">
     <div style="display:flex;gap:16px;align-items:flex-start">
     <!-- Left: config list -->
-    <div class="card" style="width:220px;flex-shrink:0;padding:14px">
-        <h3 style="margin:0 0 10px;font-size:14px">已保存配置</h3>
+    <div class="card" style="width:240px;flex-shrink:0;padding:14px">
+        <h3 style="margin:0 0 4px;font-size:14px">已保存配置</h3>
+        <p style="color:#888;font-size:10px;margin:0 0 10px">点击切换当前使用的配置</p>
         <div id="ai-config-list" style="max-height:420px;overflow-y:auto;margin-bottom:8px;font-size:12px"></div>
         <button onclick="newAIConfig()" style="width:100%;background:#5c6bc0;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-size:12px">+ 新增配置</button>
     </div>
@@ -791,13 +792,25 @@ function loadAIProfiles() {
 }
 function saveAIProfiles() { localStorage.setItem('ai_profiles',JSON.stringify(_aiProfiles)); localStorage.setItem('ai_active',_aiActiveId); }
 function renderAIList() {
+    fetch('/api/ai-key-status').then(r=>r.json()).then(d=>{
+    const keyOk = d.configured;
     document.getElementById('ai-config-list').innerHTML = _aiProfiles.map(p => {
         const a=p.id===_aiActiveId, e=p.id===_aiEditingId;
         const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        return `<div onclick="selectAIProfile('${p.id}')" style="padding:8px 10px;margin-bottom:4px;border-radius:6px;cursor:pointer;font-size:12px;background:${e?'#e8ecf1':a?'#e8f5e9':'#fff'};border:1px solid ${a?'#27ae60':'#e8ecf1'}">
-            <div style="font-weight:600;display:flex;justify-content:space-between;align-items:center">${esc(p.name)}${a?' <span style="font-size:10px;color:#27ae60">●</span>':''}</div>
-            <div style="color:#888;font-size:10px">${esc(p.provider)} / ${esc(p.model||'未设置')}</div></div>`;
-    }).join('');
+        const bg = e?'#e8ecf1':a?'#f0fdf4':'#fff';
+        const bd = a?'2px solid #27ae60':'1px solid #e8ecf1';
+        return `<div onclick="selectAIProfile('${p.id}')" style="padding:10px;margin-bottom:6px;border-radius:8px;cursor:pointer;font-size:12px;background:${bg};border:${bd};transition:.15s">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <span style="font-weight:700">${esc(p.name)}</span>
+                ${a?'<span style="background:#27ae60;color:#fff;padding:1px 8px;border-radius:10px;font-size:10px">使用中</span>':''}
+            </div>
+            <div style="color:#5c6bc0;font-size:11px;font-weight:600">${esc(p.provider)} · ${esc(p.model||'未设模型')}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
+                <span style="color:#888;font-size:10px">${keyOk?'🔑 密钥已配置':'⚠ 未配置密钥'}</span>
+                <span style="color:#888;font-size:10px">t=${p.temperature}</span>
+            </div>
+        </div>`;
+    }).join(''); }).catch(()=>{});
 }
 function newAIConfig() {
     const id='cfg_'+Date.now();
