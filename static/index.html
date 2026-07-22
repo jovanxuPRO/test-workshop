@@ -283,6 +283,7 @@ function tab(t) {
         t==="plan"?"新建":t==="exec"?"执行":"AI"
     )));
     if (t==="exec") loadHist();
+    if (t==="ai" && !_aiEditingId && _aiActiveId) selectAIProfile(_aiActiveId);
 }
 
 // ===== TEMPLATES =====
