@@ -1228,21 +1228,21 @@ async def ai_suggest(request: Request):
     body = await request.json()
     apis = body.get("apis", [])
     seed = body.get("seed", 0)
+    model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
+    base_url = body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     if _ai_key:
         try:
-            results = await _call_llm(apis, seed)
+            results = await _call_llm(apis, seed, model, base_url)
             if results: return {"suggestions": results}
         except Exception as e:
             logger.warning(f"AI call failed, fallback: {e}")
     return {"suggestions": _pattern_suggest(apis, seed)}
 
 
-async def _call_llm(apis, seed):
+async def _call_llm(apis, seed, model, base_url):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    base = (os.environ.get("TW_AI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
-    model = os.environ.get("TW_AI_MODEL") or "gpt-4o"
     prompt = f"""你是ISTQB高级测试工程师。根据API生成测试用例JSON数组。
 
 API:
@@ -1251,7 +1251,7 @@ API:
 每条: title, priority(P0/P1/P2), expected(具体), precondition(实际), steps, method, path
 每个API 3-6条，总量10-20条。返回纯JSON数组。"""
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(f"{base}/chat/completions",
+        r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
                   "temperature":0.8+random.random()*0.2,"max_tokens":2000})

@@ -554,7 +554,15 @@ function previewCases() {
         }
     });
     const seed = Date.now() % 10000;
-    fetch('/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apis, pages:pgs, seed})})
+    // Send AI config along with APIs
+    const aiCfg = {model: '', base_url: ''};
+    try { const c = JSON.parse(localStorage.getItem('ai_profiles')||'[]');
+        const activeId = localStorage.getItem('ai_active');
+        const active = c.find(x=>x.id===activeId) || c[0] || {};
+        aiCfg.model = active.model || '';
+        aiCfg.base_url = active.base_url || '';
+    } catch(e) {}
+    fetch('/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apis, pages:pgs, seed, model:aiCfg.model, base_url:aiCfg.base_url})})
     .then(r=>r.json()).then(d=>{
         const suggestions = d.suggestions||[];
         window._previewSuggestions = suggestions;
