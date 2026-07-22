@@ -692,8 +692,9 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     yield f"data: {json.dumps({'t':'error','msg':'Execution timeout (10min)'})}\n\n"
                     break
                 if await request.is_disconnected():
-                    # Don't kill process — allow reconnection via "继续"
-                    break
+                    try: proc.terminate(); proc.kill()
+                    except Exception: pass
+                    RUN_PROCS.pop(pid, None)
                 try:
                     line = await asyncio.to_thread(q.get, timeout=0.1)
                 except queue.Empty:
