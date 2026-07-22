@@ -132,6 +132,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <table style="width:100%;font-size:12px;table-layout:auto" id="preview-table">
             <thead><tr style="background:#f8f9fb">
                 <th style="width:28px;position:sticky;left:0;background:#f8f9fb"><input type="checkbox" id="preview-select-all" onchange="togglePreviewAll()"></th>
+                <th style="width:30px;background:#f8f9fb">🔒</th>
                 <th style="width:55px">编号</th>
                 <th style="width:80px">模块</th>
                 <th style="min-width:180px">用例标题</th>
@@ -537,11 +538,21 @@ function previewCases() {
     if (!apis.length && !pgs.length) { alert('请先添加 API 接口或 Web 页面'); return; }
     window._previewApis = apis; window._previewPgs = pgs;
     window._previewName = name;
+    window._lockedCases = window._lockedCases || [];  // persist locks across regenerations
     document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#5c6bc0">AI 正在分析 API 结构生成用例...</td></tr>';
     document.getElementById('case-preview-title').textContent = '用例预览 (生成中...)';
     document.getElementById('case-preview').classList.remove('hidden');
     document.getElementById('case-preview').scrollIntoView({behavior:'smooth'});
     // Fetch AI suggestions with random seed for variation each regeneration
+    // Save locked row HTML before regenerating
+    const lockedRows = {};
+    document.querySelectorAll('.pv-lock.locked').forEach(el => {
+        const row = el.closest('tr');
+        if (row) {
+            const key = el.dataset.key || '';
+            lockedRows[key] = {html: row.innerHTML, bg: row.style.background};
+        }
+    });
     const seed = Date.now() % 10000;
     fetch('/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({apis, pages:pgs, seed})})
     .then(r=>r.json()).then(d=>{
@@ -555,8 +566,10 @@ function previewCases() {
             num++;
             const step = stepTemplates[i % stepTemplates.length].replace('{m}',s.method).replace('{p}',s.path);
             const tdata = (i % 3 === 0) ? dataTemplates[i % dataTemplates.length] : '无';
-            rows += `<tr style="border-bottom:1px solid #eee">
+            const lk = window._lockedCases && window._lockedCases.includes('s_'+i);
+            rows += `<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}">
                 <td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td>
+                <td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td>
                 <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
                 <td style="padding:6px 4px;font-size:11px">${name}</td>
                 <td style="font-weight:600;padding:6px 4px">${s.title}</td>
@@ -579,8 +592,10 @@ function previewCases() {
              {title:'静态资源加载',pre:'无',exp:'无4xx/5xx请求',pri:'P1',stp:'打开页面, 监听response事件收集4xx'},
             ].forEach(t => {
                 num++;
-                rows += `<tr style="border-bottom:1px solid #eee">
+                const lk = window._lockedCases && window._lockedCases.includes('pg_'+pi+'_'+num);
+                rows += `<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}">
                     <td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="pg_${pi}" checked></td>
+                    <td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" onclick="toggleLock(this,'pg_${pi}_${num}')">${lk?'🔒':'🔓'}</td>
                     <td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td>
                     <td style="padding:6px 4px;font-size:11px">${name}</td>
                     <td style="font-weight:600;padding:6px 4px">[UI] ${p.na}: ${t.title}</td>
@@ -594,6 +609,17 @@ function previewCases() {
             });
         });
         document.getElementById('case-preview-list').innerHTML = rows;
+        // Restore locked rows
+        Object.keys(lockedRows).forEach(key => {
+            const el = document.querySelector('.pv-lock[data-key="' + key + '"]');
+            if (el) {
+                const row = el.closest('tr');
+                if (row && lockedRows[key].html) {
+                    row.innerHTML = lockedRows[key].html;
+                    row.style.background = '#fffde7';
+                }
+            }
+        });
         document.getElementById('case-preview-title').textContent = '用例预览 (' + num + '条)';
     }).catch(e=>{
         document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#ef5350">AI 生成失败: ' + e.message + '</td></tr>';
@@ -664,6 +690,21 @@ function getTestCaseDetails(m, p, n, epP) {
 function togglePreviewAll() {
     const v = document.getElementById('preview-select-all').checked;
     document.querySelectorAll('.pv-check').forEach(cb => cb.checked = v);
+}
+function toggleLock(el, key) {
+    if (!window._lockedCases) window._lockedCases = [];
+    const idx = window._lockedCases.indexOf(key);
+    if (idx >= 0) {
+        window._lockedCases.splice(idx, 1);
+        el.classList.remove('locked');
+        el.textContent = '🔓';
+        el.closest('tr').style.background = '';
+    } else {
+        window._lockedCases.push(key);
+        el.classList.add('locked');
+        el.textContent = '🔒';
+        el.closest('tr').style.background = '#fffde7';
+    }
 }
 async function execPreviewed() {
     const checks = document.querySelectorAll('.pv-check:checked');
