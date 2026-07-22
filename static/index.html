@@ -222,8 +222,10 @@ function toggleAuth() {
         document.getElementById("p-auth").value === "none" ? "none" : "block";
 }
 function tab(t) {
-    ["plan","exec"].forEach(x => document.getElementById("tab-"+x).classList.toggle("hidden", x!==t));
-    document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("on", a.textContent.includes(t==="plan"?"新建":"执行")));
+    ["plan","exec","ai"].forEach(x => document.getElementById("tab-"+x).classList.toggle("hidden", x!==t));
+    document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("on", a.textContent.includes(
+        t==="plan"?"新建":t==="exec"?"执行":"AI"
+    )));
     if (t==="exec") loadHist();
 }
 
