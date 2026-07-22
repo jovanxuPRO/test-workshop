@@ -108,6 +108,8 @@ function render() {
     }
 }
 function _render() {
+    const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const escSingle=s=>s.replace(/'/g,"\\'").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const q = (document.getElementById('filter').value||'').toLowerCase();
     const fs = document.getElementById('f-status').value;
     let filtered = cases.filter(c => {
@@ -127,7 +129,6 @@ function _render() {
     // Build filter chips
     const mods = Object.keys(groups).sort();
     const activeModule = document.getElementById('f-status').dataset.activeModule||'';
-    const escSingle=s=>s.replace(/'/g,"\\'").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     document.getElementById('filter-chips').innerHTML = mods.map(m =>
         `<span onclick="filterModule('${escSingle(m)}')" style="cursor:pointer;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;background:${activeModule===m?'#5c6bc0':'#e8ecf1'};color:${activeModule===m?'#fff':'#555'}">${e(m)} (${groups[m].length})</span>`
     ).join('');
