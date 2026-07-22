@@ -38,6 +38,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
         return response
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -541,7 +542,7 @@ async def gnr(request: Request):
                 p = t - f - e
             save_hist_entry({
                 "name": body.get("name", "?"),
-                "url": body.get("url", "?"),
+                "url": body.get("url", "?").split("?")[0],
                 "total": t, "passed": p, "failed": f, "errors": e,
                 "rate": round(p/t*100,1) if t else 0,
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -718,7 +719,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     continue
                 if line == "__END__":
                     rate = round(P[0] / T[0] * 100, 1) if T[0] else 0
-                    e = {"name": plan.get("name","?"), "url": plan.get("url","?"),
+                    e = {"name": plan.get("name","?"), "url": plan.get("url","?").split("?")[0],
                         "total": T[0], "passed": P[0], "failed": F[0], "errors": E[0],
                         "rate": rate, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "dir": os.path.basename(d)}
@@ -1015,13 +1016,13 @@ async def add_tc(request: Request):
     max_id = max([int(tc.get("id","0")) for tc in tcs] + [0])
     tc = {
         "id": str(max_id + 1).zfill(3),
-        "module": b.get("module", ""),
-        "title": b.get("title", ""),
-        "priority": b.get("priority", "P1"),
+        "module": str(b.get("module", ""))[:100],
+        "title": str(b.get("title", ""))[:200],
+        "priority": b.get("priority", "P1")[:10],
         "method": b.get("method", "GET"),
-        "path": b.get("path", ""),
-        "expected": b.get("expected", ""),
-        "steps": b.get("steps", ""),
+        "path": str(b.get("path", ""))[:500],
+        "expected": str(b.get("expected", ""))[:500],
+        "steps": str(b.get("steps", ""))[:1000],
         "status": "Pending",
         "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
@@ -1058,4 +1059,6 @@ def index():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=9000)
+    host = os.environ.get("TW_HOST", "127.0.0.1")
+    port = int(os.environ.get("TW_PORT", "9000"))
+    uvicorn.run(app, host=host, port=port)
