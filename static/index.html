@@ -496,8 +496,8 @@ function previewCases() {
         const suggestions = d.suggestions||[];
         window._previewSuggestions = suggestions;
         let rows = '';
+        const priColor = {P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0',P3:'#888'};
         suggestions.forEach((s, i) => {
-            const priColor = {P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0',P3:'#888'};
             rows += `<tr><td><input type="checkbox" class="pv-check" value="${i}" checked></td>
                 <td style="font-family:monospace;font-size:10px">TC-${String(i+1).padStart(3,'0')}</td>
                 <td>${name}</td>
