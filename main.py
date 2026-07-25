@@ -1475,9 +1475,9 @@ def update_tc_status(plan, xml_path):
     except Exception:
         pass
 
-@app.get("/tc")
-def tc_page():
-    return FileResponse(os.path.join(BASE, "static", "tc.html"))
+@app.get("/ci")
+def ci_page():
+    return FileResponse(os.path.join(BASE, "static", "ci.html"))
 
 @app.get("/")
 def index():

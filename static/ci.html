@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CI/CD 控制台</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f6fa;color:#333}
+.top{background:#2c3e50;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.top h1{font-size:18px}.top a{color:#a0b4c8;text-decoration:none;font-size:13px}
+.card{background:#fff;border-radius:12px;padding:20px;margin:16px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px}
+.metric{background:#fff;border-radius:12px;padding:18px 20px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.metric .v{font-size:36px;font-weight:700;display:block}.metric .l{font-size:12px;color:#888;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f8f9fb;padding:10px 12px;text-align:left;font-size:11px;color:#888}
+td{padding:8px 12px;border-bottom:1px solid #eee}
+.btn{padding:10px 20px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;color:#fff}
+.btn-run{background:#26a69a}.btn-run:hover{opacity:.9}
+.btn-stop{background:#ef5350}
+.status-pass{color:#27ae60;font-weight:700}.status-fail{color:#ef5350;font-weight:700}
+.status-running{color:#ff9800;font-weight:700}
+.bar{height:8px;background:#e8ecf1;border-radius:4px;overflow:hidden;margin:4px 0}
+.bar-f{height:100%;border-radius:4px;transition:width .3s}
+.log{background:#1a1c23;color:#a6e22e;padding:12px;border-radius:8px;font-family:monospace;font-size:11px;max-height:300px;overflow-y:auto;white-space:pre-wrap}
+.config-area{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.config-area input,.config-area select{padding:8px 12px;border:2px solid #e8ecf1;border-radius:6px;font-size:13px}
+.config-area input{flex:1}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="top">
+    <h1>CI/CD 控制台</h1>
+    <span><a href="/">测试工坊</a> | <a href="/tc">用例管理</a> | <a href="/api/report-list">报告库</a></span>
+</div>
+
+<div class="grid">
+    <div class="metric"><span class="v" id="m-total" style="color:#3498db">0</span><span class="l">总执行次数</span></div>
+    <div class="metric"><span class="v" id="m-pass" style="color:#27ae60">0</span><span class="l">通过</span></div>
+    <div class="metric"><span class="v" id="m-fail" style="color:#ef5350">0</span><span class="l">失败</span></div>
+    <div class="metric"><span class="v" id="m-rate" style="color:#5c6bc0">-</span><span class="l">通过率</span></div>
+</div>
+
+<div class="card">
+    <h2 style="margin-bottom:12px">执行配置</h2>
+    <div class="config-area">
+        <input id="ci-url" placeholder="目标 API URL" value="http://127.0.0.1:8000">
+        <input id="ci-name" placeholder="执行名称" value="CI-Run" style="max-width:200px">
+        <select id="ci-headless"><option value="true">Headless</option><option value="false">Visible Browser</option></select>
+        <button class="btn btn-run" onclick="startCI()">▶ 执行 CI</button>
+        <button class="btn btn-stop hidden" id="btn-stop" onclick="stopCI()">⏹ 停止</button>
+    </div>
+    <div class="log hidden" id="ci-log"></div>
+    <div id="ci-status" style="margin-top:10px;font-size:13px"></div>
+</div>
+
+<div class="card">
+    <h2 style="margin-bottom:12px">执行历史</h2>
+    <table>
+        <thead><tr><th>时间</th><th>名称</th><th>URL</th><th>总计</th><th>通过</th><th>失败</th><th>通过率</th><th>操作</th></tr></thead>
+        <tbody id="ci-history"></tbody>
+    </table>
+</div>
+
+<script>
+var _evt = null;
+
+function loadHistory() {
+    fetch('/api/history-data').then(r=>r.json()).then(d=>{
+        var logs = d.history||[];
+        var pass=0, fail=0;
+        logs.forEach(l=>{ if((l.failed||0)+(l.errors||0)===0) pass++; else fail++; });
+        document.getElementById('m-total').textContent = logs.length;
+        document.getElementById('m-pass').textContent = pass;
+        document.getElementById('m-fail').textContent = fail;
+        document.getElementById('m-rate').textContent = logs.length ? Math.round(pass/logs.length*100)+'%' : '-';
+        var esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        document.getElementById('ci-history').innerHTML = logs.map((l,i)=>`<tr>
+            <td>${esc(l.time)}</td><td><strong>${esc(l.name)}</strong></td><td style="font-size:11px;color:#888">${esc(l.url)}</td>
+            <td>${l.total||0}</td><td style="color:#27ae60">${l.passed||0}</td><td style="color:#ef5350">${l.failed||0}</td>
+            <td class="${(l.failed||0)===0?'status-pass':'status-fail'}">${l.rate||0}%</td>
+            <td><a href="/api/report?dir=${esc(l.dir||'')}" target="_blank" style="color:#5c6bc0">报告</a></td>
+        </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#888;padding:20px">暂无执行记录</td></tr>';
+    });
+}
+loadHistory();
+
+async function startCI() {
+    var url = document.getElementById('ci-url').value.trim()||'http://localhost';
+    var name = document.getElementById('ci-name').value.trim()||'CI-Run';
+    var headless = document.getElementById('ci-headless').value==='true';
+    var plan = {
+        name: name, url: url,
+        types: ["api","unit","data"],
+        apis: [
+            {m:"GET",p:"/api/health",n:"健康检查"},
+            {m:"POST",p:"/api/auth/login",n:"登录"},
+            {m:"GET",p:"/api/users",n:"用户列表"},
+            {m:"POST",p:"/api/users",n:"创建用户"},
+            {m:"GET",p:"/api/users/{id}",n:"用户详情"},
+            {m:"PUT",p:"/api/users/{id}",n:"更新用户"},
+            {m:"DELETE",p:"/api/users/{id}",n:"删除用户"},
+            {m:"GET",p:"/api/orders",n:"订单列表"},
+            {m:"POST",p:"/api/orders",n:"创建订单"},
+            {m:"GET",p:"/api/orders/{id}",n:"订单详情"},
+            {m:"PUT",p:"/api/orders/{id}",n:"更新订单"},
+        ],
+        pages: [{u:"/",na:"首页"},{u:"/login",na:"登录页"}],
+        rules: "健康检查返回200\n登录失败返回401\n用户CRUD全部可用",
+        auth: "none", authValue: ""
+    };
+    document.getElementById('ci-log').classList.remove('hidden');
+    document.getElementById('ci-log').textContent = '准备执行...\n';
+    document.getElementById('btn-stop').classList.remove('hidden');
+    document.getElementById('ci-status').innerHTML = '<span class="status-running">⏳ 执行中...</span>';
+
+    try {
+        var pr = await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
+        var pd = await pr.json();
+        if (!pd.id) { document.getElementById('ci-log').textContent += '错误: '+(pd.error||'Plan failed')+'\n'; return; }
+        _evt = new EventSource('/api/stream?id='+pd.id);
+        _evt.onmessage = function(e) {
+            try {
+                var d = JSON.parse(e.data);
+                if (d.t==='test') document.getElementById('ci-log').textContent += d.line + '\n';
+                else if (d.t==='done') {
+                    _evt.close(); _evt=null;
+                    document.getElementById('btn-stop').classList.add('hidden');
+                    document.getElementById('ci-log').textContent += '\n=== 完成 ===\n';
+                    document.getElementById('ci-status').innerHTML = '<span class="'+(d.failed===0?'status-pass':'status-fail')+'">'+(d.failed===0?'✅ 通过':'❌ 失败')+' | '+d.passed+'/'+d.total+'</span>';
+                    loadHistory();
+                }
+            } catch(ex) {}
+        };
+        _evt.onerror = function() { if(_evt){_evt.close();_evt=null;} document.getElementById('btn-stop').classList.add('hidden'); };
+    } catch(e) {
+        document.getElementById('ci-log').textContent += '网络错误: '+e.message+'\n';
+    }
+}
+function stopCI() {
+    fetch('/api/stop',{method:'POST'});
+    if(_evt){_evt.close();_evt=null;}
+    document.getElementById('btn-stop').classList.add('hidden');
+    document.getElementById('ci-status').innerHTML = '<span class="status-fail">⏹ 已停止</span>';
+}
+</script>
+</body>
+</html>
