@@ -289,19 +289,6 @@ async function startCI() {
         document.getElementById('btn-stop').classList.add('hidden');
     }
 }
-        };
-        _evt.onerror = function() {
-            if(_evt){_evt.close();_evt=null;}
-            document.getElementById('btn-start').disabled = false;
-            document.getElementById('btn-stop').classList.add('hidden');
-            document.getElementById('ci-log').textContent += '\n⚠ 连接中断\n';
-        };
-    } catch(e) {
-        document.getElementById('ci-log').textContent += '❌ 网络错误: '+e.message+'\n';
-        document.getElementById('btn-start').disabled = false;
-        document.getElementById('btn-stop').classList.add('hidden');
-    }
-}
 function stopCI() {
     fetch('/api/stop',{method:'POST'});
     if(_evt){_evt.close();_evt=null;}
