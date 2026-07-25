@@ -193,7 +193,12 @@ async function startCI() {
         {m:"GET",p:"/api/report-count",n:"报告摘要"},
         {m:"HEAD",p:"/",n:"首页HEAD"},
     ];
-    var validPaths = new Set(seedApis.map(a => a.p));
+    var validPaths = seedApis.map(a => a.p);
+    // Match flexibly: exact path or starts-with (handles /api/tc?filter=test)
+    function isValidPath(p) {
+        p = (p||'').split('?')[0]; // strip query string
+        return validPaths.some(vp => p === vp || p.startsWith(vp+'?') || p.startsWith(vp+'/'));
+    }
 
     // Step 1: AI generate
     var suggestions = [];
@@ -210,7 +215,7 @@ async function startCI() {
 
     // Step 2: Filter — keep only cases for real endpoints
     var before = suggestions.length;
-    suggestions = suggestions.filter(s => validPaths.has(s.path));
+    suggestions = suggestions.filter(s => isValidPath(s.path));
     document.getElementById('ci-log').textContent += '🔍 第2轮：路径筛选 ' + before + ' → ' + suggestions.length + ' 条（移除无效路径）\n';
 
     // Fallback: if AI returns nothing useful, use seed endpoints
