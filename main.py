@@ -251,20 +251,20 @@ def _exact_test(method, path, title):
         stmt = f'c.request("{method}","{path}")'
         return ("not_found", stmt, "r.status_code in (404, 400)")
     if any(kw in t for kw in ["无效","非法","invalid","格式","bad","mail"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"email":"not-an-email","name":"t"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=!!!")'
+        stmt = f'c.{method.lower()}("{path}", json={{"email":"not-an-email","username":"t"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=!!!")'
         return ("invalid_input", stmt, "r.status_code in (400, 422)")
     if any(kw in t for kw in ["重复","dup","冲突","already"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"dup-test","email":"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
+        stmt = f'c.{method.lower()}("{path}", json={{"username":"dup-test","email":"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
         return ("duplicate", stmt, "r.status_code in (400, 409)")
     if any(kw in t for kw in ["过短","short","超长","long","过长","溢出","overflow"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
+        stmt = f'c.{method.lower()}("{path}", json={{"username":"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
         return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500")
     # Positive scenarios — only reached if no error keyword matched
     if any(kw in t for kw in ["创建","create","新增","add","注册"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"test-user","email":"test@example.com","password":"Test123!"}})'
+        stmt = f'c.{method.lower()}("{path}", json={{"username":"test-user","email":"test@example.com","password":"Test123!"}})'
         return ("create_ok", stmt, "r.status_code in (200, 201)")
     if any(kw in t for kw in ["更新","update","修改","edit","replace"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"updated-name"}})'
+        stmt = f'c.{method.lower()}("{path}", json={{"username":"updated-name"}})'
         return ("update_ok", stmt, "r.status_code in (200, 201, 204)")
     if any(kw in t for kw in ["删除","delete","remove"]):
         stmt = f'c.request("{method}","{path}")'
