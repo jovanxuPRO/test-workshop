@@ -158,9 +158,6 @@ async def startup_check():
         logger.info(f"Startup OK. {r.stdout.strip()}")
 
 
-import signal, atexit
-
-
 def _cleanup_procs():
     for pid, proc in list(RUN_PROCS.items()):
         try:
@@ -1344,7 +1341,7 @@ async def ai_suggest(request: Request):
         msg = "API Key 未配置" if not _ai_key else "AI 返回为空"
         return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": msg}
     except Exception as e:
-        logger.error(f"ai-suggest crashed: {e}", exc_info=True)
+        logger.error(f"ai-suggest crashed: {e}", exc_info=_DEBUG)
         return {"suggestions": [], "source": "error", "ai_error": str(e)[:200]}
 
 
