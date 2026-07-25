@@ -857,8 +857,8 @@ function importSelectedTCs() {
 // ===== INIT =====
 initTpls();
 try {
-    var tplBtn = document.querySelector('[data-k="demo"]');
-    if (tplBtn) apply("demo", tplBtn);
+    var tplBtn = document.querySelector('[data-k="task"]');
+    if (tplBtn) apply("task", tplBtn);
 } catch(e) { console.error(e); }
 restore();  // Override with saved state if exists
 if (!document.querySelector("#api-list tr")) addApi();
