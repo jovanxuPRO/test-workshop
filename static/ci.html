@@ -241,30 +241,32 @@ function updateSched() {
     var freq = parseInt(document.getElementById('sched-freq').value)||0;
     var time = document.getElementById('sched-time').value;
     localStorage.setItem('ci_schedule', JSON.stringify({freq:String(freq), time:time}));
-    if (schedInterval) clearInterval(schedInterval);
-    if (!freq) { document.getElementById('sched-countdown').textContent = ''; return; }
+    if (schedInterval) { clearInterval(schedInterval); schedInterval = null; }
+    if (!freq) { document.getElementById('sched-countdown').textContent = '定时已关闭'; return; }
+    var lastRun = 0;
     function tick() {
-        var now = new Date();
-        var next = new Date();
+        var now = Math.floor(Date.now()/1000);
+        var nextRun;
         if (time) {
-            var parts = time.split(':');
-            next.setHours(parseInt(parts[0])||0, parseInt(parts[1])||0, 0, 0);
-            if (next <= now) next.setDate(next.getDate()+1);
-            var diff = Math.floor((next - now)/1000);
-            document.getElementById('sched-countdown').textContent = '下次执行: ' + new Date(next).toLocaleString() + ' (还有 '+Math.floor(diff/3600)+'时'+Math.floor(diff%3600/60)+'分)';
+            var d = new Date(); var parts = time.split(':');
+            d.setHours(parseInt(parts[0])||0, parseInt(parts[1])||0, 0, 0);
+            if (d.getTime() <= Date.now()) d.setDate(d.getDate()+1);
+            nextRun = Math.floor(d.getTime()/1000);
         } else {
-            var diff = freq - (Math.floor(now.getTime()/1000) % freq);
-            document.getElementById('sched-countdown').textContent = '下次执行: ' + Math.floor(diff/3600)+'时'+Math.floor(diff%3600/60)+'分后';
+            nextRun = Math.floor(now/freq)*freq + freq;
+        }
+        var diff = nextRun - now;
+        var h = Math.floor(diff/3600), m = Math.floor(diff%3600/60), s = diff%60;
+        document.getElementById('sched-countdown').textContent = '下次执行: '+(time?'每天 ':'')+new Date(nextRun*1000).toLocaleTimeString()+' (还有 '+h+'时'+m+'分'+s+'秒)';
+        // Trigger when time arrives (within 30s window, not already run this cycle)
+        if (diff <= 0 && now - lastRun > 60) {
+            lastRun = now;
+            document.getElementById('ci-url').value = document.getElementById('ci-url').value||'http://127.0.0.1:8000';
+            startCI();
         }
     }
     tick();
-    schedInterval = setInterval(function(){
-        tick();
-        var freq2 = parseInt(document.getElementById('sched-freq').value)||0;
-        if (!freq2) return;
-        var now2 = Math.floor(Date.now()/1000);
-        if (now2 % freq2 < 5) startCI();
-    }, 30000);
+    schedInterval = setInterval(tick, 5000);  // Check every 5 seconds
 }
                 }
             } catch(ex) {}
