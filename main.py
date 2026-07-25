@@ -258,7 +258,7 @@ def _exact_test(method, path, title):
         return ("duplicate", stmt, "r.status_code in (400, 409)")
     if any(kw in t for kw in ["过短","short","超长","long","过长","溢出","overflow"]):
         stmt = f'c.{method.lower()}("{path}", json={{"name":"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
-        return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500)
+        return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500")
     # Positive scenarios — only reached if no error keyword matched
     if any(kw in t for kw in ["创建","create","新增","add","注册"]):
         stmt = f'c.{method.lower()}("{path}", json={{"name":"test-user","email":"test@example.com","password":"Test123!"}})'
