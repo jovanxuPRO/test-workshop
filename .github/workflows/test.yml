@@ -61,14 +61,13 @@ jobs:
         with:
           paths: reports/test-results.xml
 
-      - name: Slack Notify (Failure)
-        if: failure() && github.ref == 'refs/heads/main'
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {"text": "❌ CI 回归失败: ${{ github.repository }} #${{ github.run_number }}"}
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Python | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ matrix.python-version }} | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
 
   deploy-report:
     needs: test
