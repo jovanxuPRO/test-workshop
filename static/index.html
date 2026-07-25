@@ -144,7 +144,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
                 <th style="width:55px">方法</th>
                 <th style="min-width:140px">路径</th>
                 <th style="min-width:140px">预期结果</th>
-                <th style="min-width:120px">测试步骤</th>
+                <th style="min-width:240px">测试步骤</th>
                 <th style="width:70px">测试数据</th>
             </tr></thead>
             <tbody id="case-preview-list"></tbody>
@@ -615,7 +615,7 @@ function previewCases() {
         suggestions.forEach((s,i)=>{
             num++;
             const lk=window._lockedCases&&window._lockedCases.includes('s_'+i);
-            rows+=`<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">${s.title}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[s.priority]||'#888'};padding:6px 4px">${s.priority||'P1'}</td><td style="font-size:10px;padding:6px 4px">${s.precondition||'无'}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td><td style="font-size:10px;padding:6px 4px">${s.steps||''}</td><td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||'无'}</td></tr>`;
+            rows+=`<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">${s.title}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[s.priority]||'#888'};padding:6px 4px">${s.priority||'P1'}</td><td style="font-size:10px;padding:6px 4px">${s.precondition||'无'}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td><td style="font-size:10px;padding:6px 4px;max-width:260px;white-space:normal;word-break:break-word">${s.steps||''}</td><td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||'无'}</td></tr>`;
         });
         document.getElementById('case-preview-list').innerHTML = rows;
         // Append UI + Data + Unit cases 

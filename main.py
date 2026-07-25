@@ -1276,15 +1276,22 @@ async def _call_llm(apis, seed, model, base_url):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""测试用例生成。每个API输出多条用例，每行一个JSON对象（不要数组括号），行与行之间无逗号。
+    prompt = f"""你是 ISTQB 认证的测试工程师。请根据以下 API 信息，为每个端点设计 4-8 条测试用例，覆盖正向、反向、边界、安全四大范畴。
 
-API列表:
+=== 测试目标 API ===
 {api_lines}
 
-格式（每行独立完整）:
-{{"title":"正常返回用户列表","priority":"P0","expected":"HTTP 200,返回JSON数组","precondition":"服务已启动","steps":"1.构造GET请求 /api/users 2.检查状态码为200 3.验证响应体为JSON数组 4.检查第一条数据含id字段","method":"GET","path":"/api/users"}}
+=== 输出格式（每行一个完整的 JSON 对象，无外层方括号，无逗号分隔） ===
+{{"title":"查询用户列表 —— 正常分页请求","priority":"P0","method":"GET","path":"/api/users","precondition":"mock_server 已启动，数据库含有初始测试数据","expected":"HTTP 200，响应为 JSON 数组，长度 <= limit 参数","steps":"1.向 /api/users?page=1&limit=10 发起 GET 请求 2.校验 HTTP 状态码为 200 3.解析响应体，确认是 JSON 数组 4.断言数组元素数量不超过 10 5.选取第一条数据验证至少包含 id/name/email 字段"}}
+{{"title":"创建用户 —— 缺少必填字段 name","priority":"P1","method":"POST","path":"/api/users","precondition":"已获取有效的认证 token","expected":"HTTP 400，响应包含字段缺失错误描述","steps":"1.准备仅含 email=test@x.com 的 JSON 请求体，故意漏掉 name 字段 2.向 /api/users 发起 POST 请求 Content-Type application/json 3.校验 HTTP 状态码为 400 或 422 4.解析响应确认错误消息明确指出 name 字段缺失"}}
+{{"title":"删除用户 —— 使用不存在的 id","priority":"P1","method":"DELETE","path":"/api/users/{{id}}","precondition":"mock_server 正常运行","expected":"HTTP 404，提示用户不存在","steps":"1.构造一个明显不存在的用户 id 如 999999 2.向 /api/users/999999 发起 DELETE 请求 3.校验 HTTP 状态码为 404 4.解析响应体确认错误消息为\"用户不存在\"或类似描述"}}
 
-每个API输出5-12行，覆盖正常/异常/边界/安全场景。steps字段必须写详细步骤（1.xxx 2.xxx 3.xxx格式）。直接输出JSON行，不要数组符号。"""
+=== 硬性约束 ===
+1. paths 中的 {{id}} 是动态参数，请在测试代码中使用 ID = h.get("响应中的id字段") 从前面接口结果中提取
+2. steps 字段必须是编号（1. 2. 3.）的口语化操作步骤，严禁仅输出方法名或路径名
+3. 每个 API 端点至少 4 条用例，必须覆盖: 正常(200)、缺少必填参数(400)、非法值(400)、不存在资源(404)、可选安全场景(P2)
+4. ?= 标记的 query 参数请作为可选参数处理
+5. 不要问我任何问题，不要输出额外解释，只输出 JSON 行"""
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
@@ -1325,33 +1332,172 @@ API列表:
 def _pattern_suggest(apis, seed):
     import random; random.seed(seed)
     suggestions = []
-    step_map = {
-        "正常":"1.发送{m}请求到{p} 2.检查状态码为200/201 3.验证响应体包含预期字段",
-        "列表":"1.发送{m}请求到{p} 2.检查状态码200 3.验证返回JSON数组 4.确认包含必要字段",
-        "详情":"1.发送{m}请求到{p}(替换id为有效值) 2.检查状态码200 3.验证返回单个对象",
-        "创建":"1.准备合法的请求体JSON 2.发送{m}请求到{p} 3.检查状态码201 4.从响应体提取新资源id",
-        "更新":"1.准备需要更新的字段 2.发送{m}请求到{p}(替换id) 3.检查状态码200 4.验证更新后的值",
-        "删除":"1.发送{m}请求到{p}(替换id) 2.检查状态码204 3.再次GET验证404",
-        "缺少":"1.构造不含必填字段的请求体 2.发送{m}请求到{p} 3.检查状态码400/422 4.验证返回描述缺失字段的错误",
-        "无效":"1.构造包含非法格式的请求体 2.发送{m}请求到{p} 3.检查状态码400/422 4.验证错误消息指出问题",
-        "重复":"1.首次创建资源并记录 2.再次用相同字段发送{m}到{p} 3.检查状态码400/409 4.验证返回已存在错误",
-        "不存在":"1.发送{m}请求到{p}(使用不存在的id) 2.检查状态码404 3.验证返回未找到信息",
-        "错误":"1.使用错误的Content-Type 2.发送{m}请求到{p} 3.检查状态码400/415 4.验证不支持提示",
-        "空":"1.发送{m}请求到{p}(不附带请求体) 2.检查状态码400/422 3.验证返回参数要求提示",
-        "登录":"1.发送POST到{p}(正确用户名密码) 2.检查状态码200 3.提取JWT token 4.验证格式",
-        "SQL":"1.在参数中注入SQL片段'OR'1'='1 2.发送{m}请求到{p} 3.检查状态码400/422 4.确认未泄露数据",
-        "XSS":"1.在输入中注入<script>alert(1)</script> 2.发送{m}请求到{p} 3.检查状态码400 4.确认未原样输出",
-        "分页":"1.发送{m}请求到{p}?page=1&size=10 2.检查状态码200 3.验证返回数据不超过10条 4.确认包含总数",
-        "并发":"1.同时发送10个{m}请求到{p} 2.等待全部完成 3.检查所有状态码<500 4.确认无超时",
-        "超时":"1.设请求超时2秒 2.发送{m}请求到{p} 3.检查在超时前响应 4.确认无挂起",
+    # === 口语化步骤模板（每种场景 2-3 种随机写法） ===
+    _step_pool = {
+        "正常": [
+            "1.向 {p} 发起 {m} 请求 2.校验 HTTP 状态码为 200 或 201 3.解析响应体，确认所有预期的顶层字段全部存在且类型正确",
+            "1.发送 {m} {p}，附带合理的请求头 2.断言状态码落入 [200,201,204] 3.逐字段检查响应 JSON 结构与接口文档一致",
+            "1.调用 {m} {p}，不带任何额外参数 2.确认 HTTP 状态为 2xx 3.抽取响应体中的关键业务字段进行断言",
+        ],
+        "列表": [
+            "1.向 {p} 发起 {m} 请求 2.校验状态码为 200 3.确认响应是 JSON 数组 4.检查数组包含至少一条数据，每条具备必要字段",
+            "1.发送 {m} {p} 2.断言响应是合法 JSON 数组 3.遍历数组元素确认 id 不重复 4.验证分页信息如 total 字段",
+            "1.GET {p} 获取全量列表 2.检查 JSON 数组不为空 3.对首条数据做字段完整性校验",
+        ],
+        "详情": [
+            "1.向 {p} 发起 {m} 请求(URL 中替换为已有资源 id) 2.验证 HTTP 200 3.确认返回的是单个对象而非数组 4.检查该对象包含 id 字段且值与请求一致",
+            "1.{m} {p}，使用数据库中真实存在的 id 2.断言响应体为对象 3.对比返回的各字段值与预期一致",
+            "1.用已知有效 id 调用 {m} {p} 2.校验状态码 200 3.检查返回详情结构与文档匹配",
+        ],
+        "创建": [
+            "1.手工构造完整的合法请求体 JSON 2.向 {p} 发起 {m} 请求，Content-Type=application/json 3.断言 HTTP 201 4.从响应头或响应体提取新创建资源 id，记作全局变量供后续用例使用",
+            "1.准备新增资源所需全部必填字段 2.{m} {p} 发送请求 3.状态码确认为 201 4.取出新 id 并再次 GET 验证数据确实持久化",
+            "1.构建合规 JSON body 调用 {m} {p} 2.校验返回 201 3.提取 Location 头或响应 id 字段",
+        ],
+        "更新": [
+            "1.选取一个已知 id，准备要修改的字段值 2.向 {p} 发送 {m} 请求 3.断言 HTTP 200 4.用 GET 再次查询同一个 id 确认字段已更新为预期值",
+            "1.组装修改后的请求体 2.{m} {p}（URL 中填入目标资源 id） 3.验证状态码 200 4.读取响应中返回的更新后数据做比对",
+        ],
+        "修改": [
+            "1.选取一个已知 id，准备要修改的字段值 2.向 {p} 发送 {m} 请求 3.断言 HTTP 200 4.用 GET 再次查询同一个 id 确认字段已更新为预期值",
+            "1.组装修改后的请求体 2.{m} {p}（URL 中填入目标资源 id） 3.验证状态码 200 4.读取响应中返回的更新后数据做比对",
+        ],
+        "删除": [
+            "1.选取一个待删资源 id 2.向 {p} 发送 {m} 请求 3.断言 HTTP 204 或 200 4.再次对同 id 发起 GET 确认返回 404",
+            "1.{m} {p}，URL 中指定有效资源 2.确认删除成功状态码 3.复查该资源已不可访问",
+        ],
+        "缺少": [
+            "1.构造请求体，故意省略一个必填字段（如 name） 2.向 {p} 发起 {m} 请求 3.断言 HTTP 400 或 422 4.解析响应中的 error 消息，确认指出了具体缺失字段名称",
+            "1.发送不含必填字段的空 body 到 {m} {p} 2.确认返回 400/422 3.检查消息体包含参数校验错误说明",
+            "1.只提供部分字段调用 {m} {p} 2.验证拒绝原因在响应中以 key-value 形式指出",
+        ],
+        "无效": [
+            "1.将某字符串字段替换为超长(5000 字符)字符串 2.向 {p} 发起 {m} 请求 3.断言 HTTP 400 或 422 4.确认错误提示说明输入格式不合法",
+            "1.为数值字段传入非数字字符串 2.{m} {p} 发送请求 3.验证 400 4.返回消息应包含格式错误提示",
+            "1.传入类型不匹配的值(如 id 填 null)调用 {m} {p} 2.校验 400 3.确认服务端做了严格类型校验",
+        ],
+        "重复": [
+            "1.先创建一条资源并记录其唯一标识 2.再次调用 {m} {p} 使用完全相同的唯一字段 3.断言 HTTP 400 或 409 4.确认响应中明确表示\"已存在\"或\"重复\"",
+            "1.首次 {m} {p} 创建成功 2.二次用相同参数再发 {m} {p} 3.断言 400/409 4.提取冲突提示确保可读",
+        ],
+        "不存在": [
+            "1.构造一个明显不存在的 id(如 999999) 2.向 {p} 发送 {m} 请求 3.断言 HTTP 404 4.确认响应体包含\"找不到\"或\"不存在\"等提示",
+            "1.使用从未创建过的 UUID 调用 {m} {p} 2.验证 404 3.响应消息应可让人理解缺失的是哪个资源",
+        ],
+        "错误": [
+            "1.将 Content-Type 设为 text/plain 而非 application/json 2.向 {p} 发起 {m} 请求 3.断言 HTTP 400 或 415 4.确认返回不支持该媒体类型的提示",
+            "1.请求体使用畸形的 JSON（缺少引号/括号不闭合） 2.{m} {p} 3.校验 400 4.错误说明应指导如何修复格式",
+        ],
+        "空": [
+            "1.发送请求体为空字符串的 {m} 请求到 {p} 2.断言 HTTP 400 或 422 3.确认返回信息提示至少需要提供参数",
+            "1.{m} {p} 不携带任何 body 2.校验 400 3.消息中指明哪些字段为必填",
+        ],
+        "登录": [
+            "1.向 {p} 发起 POST，body 中包含正确的用户名和密码 2.断言 HTTP 200 3.从响应体中提取 access_token 或 JWT 4.验证 token 是三段式 JWT 格式",
+            "1.使用合法凭证调用 {p} 2.校验 200 3.获取 token 并解析其 payload 确认包含用户 id 和过期时间",
+            "1.POST {p} 传入 credentials 2.断言 200 3.保存 token 供后续鉴权用例使用",
+        ],
+        "注册": [
+            "1.准备新用户注册信息(用户名、密码、邮箱) 2.POST {p} 3.校验 201 或 200 4.用返回的 id/token 确认注册成功",
+            "1.发送合规注册请求到 {p} 2.确认 201 3.验证用户信息在后续查询中可见",
+        ],
+        "SQL": [
+            "1.在请求 query 参数或 body 字段中插入 ' OR '1'='1 2.向 {p} 发起 {m} 请求 3.断言 HTTP 400 或 422 4.确认响应未额外返回不应暴露的数据",
+            "1.注入 SQL payload '; DROP TABLE users; -- 到 {m} {p} 2.校验服务返回 400 3.确认数据库表未被删除(smoke check)",
+            "1.用 1=1 SQL 片段调用 {m} {p} 2.确保未绕过校验返回全量数据",
+        ],
+        "XSS": [
+            "1.在输入字段中填入 <script>alert(1)</script> 2.向 {p} 发起 {m} 请求 3.断言 HTTP 200 且响应中未原样回显 script 标签，或直接返回 400 拒绝",
+            "1.注入 <img src=x onerror=alert(1)> 到参数 2.{m} {p} 3.确认输出已被 HTML 编码或直接拒绝",
+        ],
+        "分页": [
+            "1.向 {p} 发起 {m} 请求，携带 ?page=1&size=10 2.断言 HTTP 200 3.确认返回数组长度不超过 10 4.检查响应中含有 total 或类似的分页元信息",
+            "1.先后请求 page=1 和 page=2 调用 {m} {p} 2.确认两页数据 id 不重合 3.验证 size 参数生效",
+        ],
+        "并发": [
+            "1.使用并发工具同时发起 10 个 {m} 请求到 {p} 2.等待所有请求完成 3.断言所有响应的状态码均 < 500 4.确认无一请求超时或返回 503",
+            "1.并行发送 20 个 {m} {p} 请求 2.检查无 5xx 错误 3.确认并发下数据一致性未被破坏",
+        ],
+        "超时": [
+            "1.将 HTTP 客户端超时设为 2 秒 2.向 {p} 发起 {m} 请求 3.确认服务在超时前正常响应 4.若请求挂起超过 2s 则自动标记为失败并记录",
+            "1.设定 socket timeout=2s 调用 {m} {p} 2.在超时阈值内收到响应即通过 3.否则报告潜在性能瓶颈",
+        ],
+        "过大": [
+            "1.构造一个 10MB 以上的 JSON body 2.向 {p} 发送 {m} 请求 3.断言 HTTP 413 或服务器依旧平稳返回，不得崩溃",
+            "1.发送超出限制大小的请求到 {m} {p} 2.确认返回 413 且无服务进程异常退出",
+        ],
+        "过期": [
+            "1.使用一个已过期或伪造的 Token 2.向 {p} 发送 {m} 请求 3.校验 HTTP 401 4.确认响应中不泄露具体鉴权逻辑",
+            "1.携带 exp 时间戳已过期的 JWT 调用 {m} {p} 2.断言 401 3.错误消息不应包含内部实现细节",
+        ],
+        "可达": [
+            "1.直接 {m} {p} 确认服务可达 2.校验 HTTP 状态 < 500 3.确认响应时间在合理范围内(<2s)",
+            "1.简单 {m} {p} 探测连通性 2.状态码为 2xx/3xx 即通过",
+        ],
+        "HEAD": ["1.对 {p} 发起 HEAD 请求 2.校验 HTTP 200 3.检查返回的 Content-Type 等响应头"],
+        "验证": ["1.{m} {p} 发送请求 2.校验 2xx 3.逐一比对 JSON 各字段类型与预期一致"],
+        "基准": ["1.{m} {p} 连续请求 5 次 2.记录每次响应耗时 3.计算 P95 耗时应 ≤ 1000ms"],
+        "表单": ["1.构造 application/x-www-form-urlencoded 格式 body 2.{m} {p} 3.确认 200/201 响应正确解析表单数据"],
+        "幂等": ["1.连续两次 {m} {p} 发送相同请求 2.第二次应返回 200 且不重复创建资源 3.数据总量不变"],
+        "兼容": ["1.{m} {p} 附带常用非标准参数 2.验证服务忽略不认识参数仍正常返回 3.不因多余参数报 4xx"],
+        "替换": ["1.{m} {p} 提供所有字段 2.校验 200 3.确认未提供的字段被重置为默认值(全量替换语义)"],
+        "部分": ["1.{m} {p} 只发送需要修改的字段子集 2.校验 200 3.确认其他未提及字段未被清空(部分更新语义)"],
+        "只读": ["1.{m} {p} 尝试修改只读字段(如 created_at) 2.确认 400 或该字段被静默忽略"],
     }
-    def get_step(s, m, p):
-        for k,v in step_map.items():
-            if k in s: return v.replace("{m}",m).replace("{p}",p)
-        return f"1.发送{m}请求到{p} 2.检查状态码<500 3.验证响应体非空".replace("{m}",m).replace("{p}",p)
+    # 兜底
+    _step_fallback = ["1.向 {p} 发起 {m} 请求 2.校验 HTTP 状态码 < 500 3.确认响应体非空且有合理结构","1.{m} {p} 执行请求 2.断言无服务器内部错误 3.检查返回数据格式"]
+
+    def _match_step(keyword, m, p):
+        """匹配场景关键词并随机挑选一条口语化步骤模板"""
+        import random
+        for k in sorted(_step_pool, key=lambda x: -len(x)):
+            if k in keyword:
+                return random.choice(_step_pool[k]).replace("{m}",m).replace("{p}",p)
+        # 针对 "正常提交" 等 method_titles 的二次匹配
+        for k in sorted(_step_pool, key=lambda x: -len(x)):
+            if any(w in keyword for w in ["可达","验证","基准","HEAD","表单","幂等","兼容","替换","部分","只读"]):
+                if k in keyword:
+                    return random.choice(_step_pool[k]).replace("{m}",m).replace("{p}",p)
+        return random.choice(_step_fallback).replace("{m}",m).replace("{p}",p)
+
+    # 期望值绑定场景
+    _exp_map = {
+        "正常":"HTTP 200/201","列表":"HTTP 200，JSON 数组","详情":"HTTP 200，单个对象",
+        "创建":"HTTP 201","更新":"HTTP 200","修改":"HTTP 200",
+        "删除":"HTTP 204/200","缺少":"HTTP 400/422 含字段错误","无效":"HTTP 400/422 含格式错误",
+        "重复":"HTTP 400/409 含重复提示","不存在":"HTTP 404 含未找到提示",
+        "错误":"HTTP 400/415 含类型错误","空":"HTTP 400/422 含必填提示",
+        "登录":"HTTP 200 含 JWT token","注册":"HTTP 201/200",
+        "SQL":"HTTP 400/422 不应泄露数据","XSS":"HTTP 200(已编码)或 400(拒绝)",
+        "分页":"HTTP 200，数组长度 ≤ pageSize","并发":"全部 < 500 且无超时",
+        "超时":"200 且在 2s 阈值内","过大":"HTTP 413 或平稳拒绝",
+        "过期":"HTTP 401/403","可达":"HTTP < 500 且在 2s 内响应",
+        "HEAD":"HTTP 200 含响应头","验证":"HTTP 2xx，字段类型一致",
+        "基准":"P95 < 1000ms","表单":"HTTP 200/201 解析正确","幂等":"HTTP 200 不重复创建",
+        "兼容":"HTTP 200 忽略多余参数","替换":"HTTP 200 字段全量更新","部分":"HTTP 200 仅更新指定字段",
+        "只读":"HTTP 400 或静默忽略",
+    }
+    def _match_exp(keyword):
+        for k, v in sorted(_exp_map.items(), key=lambda x: -len(x[0])):
+            if k in keyword:
+                return v
+        return "HTTP 2xx/3xx"
+    # === 场景感知前置条件 ===
+    _pre_map = {
+        "登录":"已获取有效的认证凭证","Token":"已获取有效的认证凭证","过期":"已获取已过期的 Token",
+        "删除":"已存在可删除的测试资源","创建":"mock_server 已启动","更新":"已存在可更新的测试资源",
+        "不存在":"mock_server 正常运行，目标资源不存在","并发":"服务处于空闲状态且性能基线已知",
+        "超时":"网络正常，服务端未黑名单封禁","过大":"已准备好超大测试数据文件",
+        "SQL":"服务已启动，WAF/校验层已配置","XSS":"服务已启动，HTML 转义层已配置",
+    }
+    _pre_fallback = ["mock_server 已启动","数据库已初始化","测试数据已准备","无前置条件"]
+    def _match_pre(keyword):
+        import random
+        for k, v in sorted(_pre_map.items(), key=lambda x: -len(x[0])):
+            if k in keyword:
+                return v
+        return random.choice(_pre_fallback)
     extra = ["并发10请求","超时重试","SQL注入字符","XSS脚本标签","过期Token","大请求体413","不支持MediaType415"]
-    exp_var = {"normal":["HTTP 200","HTTP 201","HTTP 200/201/204"],"error":["HTTP 400","HTTP 422","HTTP 400/422"],"general":["HTTP 2xx","HTTP 200/301/302"]}
-    pre_var = ["服务已启动","数据库已初始化","缓存已预热","测试数据已准备","Token已获取","无"]
     # Per-method specific test titles for more variety
     method_titles = {
         "GET": ["可达性验证","响应体验证","Content-Type检查","响应时间基准","HEAD请求验证","分页参数兼容","移动端UA适配","JSON Accept头","缓存头验证","编码声明检查"],
@@ -1373,16 +1519,16 @@ def _pattern_suggest(apis, seed):
                 for s in sc[:keep]:
                     pri="P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if any(w in s for w in ["列表","详情"]) else "P2")
                     pool="error" if any(w in s for w in ["缺少","无效","错误","不存在","空","重复"]) else ("normal" if any(w in s for w in ["创建","正常"]) else "general")
-                    suggestions.append({"title":f"{pf}-{s}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var.get(pool,exp_var["general"])),"precondition":random.choice(pre_var),"steps":get_step(s,m,p)})
+                    suggestions.append({"title":f"{pf}-{s}","priority":pri,"method":m,"path":p,"expected":_match_exp(s),"precondition":_match_pre(s),"steps":_match_step(s,m,p)})
                 for s in random.sample(extra,random.randint(0,2)):
-                    suggestions.append({"title":f"{pf}-{s}","priority":"P2","method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(["无","服务已启动"]),"steps":get_step(s,m,p)})
+                    suggestions.append({"title":f"{pf}-{s}","priority":"P2","method":m,"path":p,"expected":_match_exp(s),"precondition":_match_pre(s),"steps":_match_step(s,m,p)})
                 break
         if not matched:
             random.shuffle(titles)
             keep=max(3,int(len(titles)*random.uniform(0.7,1.0)))
             for t in titles[:keep]:
                 pri="P0" if "可达" in t or "正常" in t else ("P1" if "验证" in t or "基准" in t else "P2")
-                suggestions.append({"title":f"{pf}-{t}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(pre_var),"steps":get_step(t,m,p)})
+                suggestions.append({"title":f"{pf}-{t}","priority":pri,"method":m,"path":p,"expected":_match_exp(t),"precondition":_match_pre(t),"steps":_match_step(t,m,p)})
     return suggestions
 
 
