@@ -269,12 +269,12 @@ def _exact_test(method, path, title):
     if any(kw in t for kw in ["删除","delete","remove"]):
         stmt = f'c.request("{method}","{path}")'
         return ("delete_ok", stmt, "r.status_code in (200, 204)")
-    if any(kw in t for kw in ["分页","page","limit","列表","list","查询","query"]):
-        stmt = f'c.request("{method}","{path}?page=1&limit=10")' if method == "GET" else f'c.request("{method}","{path}")'
-        return ("query_ok", stmt, "r.status_code == 200")
     if any(kw in t for kw in ["详情","detail","单个","id","查看","获取"]):
         stmt = f'c.request("{method}","{path}")'
         return ("detail_ok", stmt, "r.status_code in (200, 404)")
+    if any(kw in t for kw in ["分页","page","limit","列表","list","查询","query"]):
+        stmt = f'c.request("{method}","{path}?page=1&limit=10")' if method == "GET" else f'c.request("{method}","{path}")'
+        return ("query_ok", stmt, "r.status_code == 200")
     if any(kw in t for kw in ["登录","login","auth"]):
         stmt = f'c.{method.lower()}("{path}", json={{"username":"admin","password":"admin"}})'
         return ("login_ok", stmt, "r.status_code in (200, 201)")
