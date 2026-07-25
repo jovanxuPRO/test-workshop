@@ -1,0 +1,16 @@
+{
+  "name": "CI-Regression",
+  "url": "http://localhost:8000",
+  "types": ["api", "unit"],
+  "apis": [
+    {"m": "GET", "p": "/api/health", "n": "健康检查"},
+    {"m": "GET", "p": "/api/users", "n": "用户列表"},
+    {"m": "POST", "p": "/api/users", "n": "创建用户"},
+    {"m": "GET", "p": "/api/users/{id}", "n": "用户详情"},
+    {"m": "DELETE", "p": "/api/users/{id}", "n": "删除用户"}
+  ],
+  "pages": [],
+  "rules": "所有API返回状态码<500\n用户列表含分页信息\n创建用户返回201",
+  "auth": "none",
+  "authValue": ""
+}

@@ -1484,6 +1484,61 @@ def index():
     return FileResponse(os.path.join(BASE, "static", "index.html"))
 
 if __name__ == "__main__":
+    import sys, argparse
+    parser = argparse.ArgumentParser(description="Test Workshop Pro - CLI & Server")
+    parser.add_argument("--run-config", metavar="FILE", help="Run tests from a JSON config file (CI/CD mode)")
+    parser.add_argument("--output-dir", metavar="DIR", default=".", help="Output directory for report (default: current dir)")
+    parser.add_argument("--headless", action="store_true", help="Run Playwright in headless mode")
+    args = parser.parse_args()
+
+    if args.run_config:
+        # CI/CD mode: run tests from config file, output JUnit XML, exit
+        if args.headless:
+            os.environ["TW_HEADLESS"] = "true"
+        try:
+            with open(args.run_config, encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception as e:
+            print(f"ERROR: Cannot read config file: {e}", file=sys.stderr)
+            sys.exit(1)
+        d, _ = gen_code(config)
+        xml_path = os.path.join(d, "results.xml")
+        r = subprocess.run(
+            ["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
+            capture_output=True, text=True, timeout=600, env={**os.environ})
+        # Copy results to output dir
+        out_xml = os.path.join(args.output_dir, "test-results.xml")
+        out_html = os.path.join(args.output_dir, "test-report.html")
+        try:
+            shutil.copy(xml_path, out_xml)
+            print(f"[OK] JUnit XML: {out_xml}")
+        except Exception: pass
+        # Generate quick HTML summary
+        try:
+            root = ET.parse(xml_path).getroot()
+            ts = root.find("testsuite") or root
+            t = int(ts.get("tests", 0) or 0)
+            f = int(ts.get("failures", 0) or 0)
+            e = int(ts.get("errors", 0) or 0)
+            p = t - f - e
+            passed = f == 0 and e == 0
+            with open(out_html, "w", encoding="utf-8") as fh:
+                fh.write(f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Test Report</title>
+<style>body{{font-family:sans-serif;max-width:600px;margin:60px auto;text-align:center}}
+.pass{{color:#27ae60;font-size:48px}}.fail{{color:#ef5350;font-size:48px}}</style></head><body>
+<h1>Test Report</h1><div class="{'pass' if passed else 'fail'}">{'PASS' if passed else 'FAIL'}</div>
+<p>Total: {t} | Passed: {p} | Failed: {f} | Errors: {e}</p>
+<p>Rate: {round(p/t*100,1) if t else 0}%</p></body></html>""")
+            print(f"[OK] HTML Report: {out_html}")
+        except Exception: pass
+        if passed:
+            print(f"\n[PASS] {p}/{t} tests passed ({round(p/t*100,1) if t else 0}%)")
+            sys.exit(0)
+        else:
+            print(f"\n[FAIL] {f+e} failed/errors out of {t} tests", file=sys.stderr)
+            sys.exit(1)
+
+    # Server mode
     import uvicorn
     host = os.environ.get("TW_HOST", "127.0.0.1")
     port = int(os.environ.get("TW_PORT", "9000"))
