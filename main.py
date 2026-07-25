@@ -1592,7 +1592,6 @@ def _pattern_suggest(apis, seed):
                 keep=max(3,int(len(sc)*random.uniform(0.6,0.9)))
                 for s in sc[:keep]:
                     pri="P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if any(w in s for w in ["列表","详情"]) else "P2")
-                    pool="error" if any(w in s for w in ["缺少","无效","错误","不存在","空","重复"]) else ("normal" if any(w in s for w in ["创建","正常"]) else "general")
                     suggestions.append({"title":f"{pf}-{s}","priority":pri,"method":m,"path":p,"expected":_match_exp(s),"precondition":_match_pre(s),"steps":_match_step(s,m,p)})
                 for s in random.sample(extra,random.randint(0,2)):
                     suggestions.append({"title":f"{pf}-{s}","priority":"P2","method":m,"path":p,"expected":_match_exp(s),"precondition":_match_pre(s),"steps":_match_step(s,m,p)})
