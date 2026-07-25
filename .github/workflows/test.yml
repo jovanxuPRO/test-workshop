@@ -43,10 +43,23 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
-      - name: Validate (Dry Run)
-        id: test
+      - name: Start target service
+        if: ${{ !contains(github.event.head_commit.message, '[dry-run]') }}
+        run: |
+          # 如果你的项目有 docker-compose，在这里启动
+          # docker-compose up -d
+          # sleep 5  # 等待服务就绪
+          echo "Target service assumed running externally"
+
+      - name: CI Check (Dry Run)
+        if: ${{ contains(github.event.head_commit.message, '[dry-run]') || github.ref != 'refs/heads/main' }}
         run: |
           python main.py --run-config ci-test-plan.json --output-dir reports --dry-run
+
+      - name: CI Full Test (Main branch only, needs target service)
+        if: ${{ !contains(github.event.head_commit.message, '[dry-run]') && github.ref == 'refs/heads/main' }}
+        run: |
+          python main.py --run-config ci-test-plan.json --output-dir reports --headless
 
       - name: Upload Report
         if: always()
