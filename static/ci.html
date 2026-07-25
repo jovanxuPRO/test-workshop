@@ -80,7 +80,7 @@ td{padding:8px 12px;border-bottom:1px solid #eee}
 <div class="card" id="config-card">
     <h2 style="margin-bottom:14px">第1步：配置执行参数</h2>
     <div class="form-row" style="margin-bottom:16px">
-        <div><label>目标 API 地址</label><input id="ci-url" placeholder="http://127.0.0.1:8000" value="http://127.0.0.1:8000" style="width:300px"></div>
+        <div><label>目标 API 地址</label><input id="ci-url" placeholder="http://127.0.0.1:9000" value="http://127.0.0.1:9000" style="width:300px"></div>
         <div><label>执行名称</label><input id="ci-name" value="CI-Run" style="width:180px"></div>
         <div><label>浏览器</label><select id="ci-headless" style="width:140px"><option value="true">无头模式</option><option value="false">可见浏览器</option></select></div>
         <div style="padding-top:18px">
@@ -180,15 +180,13 @@ async function startCI() {
         name: name, url: url,
         types: ["api","unit","data"],
         apis: [
-            {m:"GET",p:"/api/health",n:"健康检查"},{m:"POST",p:"/api/auth/login",n:"登录"},
-            {m:"GET",p:"/api/users",n:"用户列表"},{m:"POST",p:"/api/users",n:"创建用户"},
-            {m:"GET",p:"/api/users/{id}",n:"用户详情"},{m:"PUT",p:"/api/users/{id}",n:"更新用户"},
-            {m:"DELETE",p:"/api/users/{id}",n:"删除用户"},{m:"GET",p:"/api/orders",n:"订单列表"},
-            {m:"POST",p:"/api/orders",n:"创建订单"},{m:"GET",p:"/api/orders/{id}",n:"订单详情"},
-            {m:"PUT",p:"/api/orders/{id}",n:"更新订单"},
+            {m:"GET",p:"/api/tc",n:"用例列表"},
+            {m:"GET",p:"/api/history-data",n:"执行历史"},
+            {m:"GET",p:"/api/report-count",n:"报告摘要"},
+            {m:"GET",p:"/",n:"首页"},
         ],
-        pages: [{u:"/",na:"首页"},{u:"/login",na:"登录页"}],
-        rules: "健康检查返回200\n登录失败返回401\n用户CRUD全部可用",
+        pages: [{u:"/",na:"首页"}],
+        rules: "所有API返回200\n报告摘要包含total字段\n用例列表为JSON数组",
         auth: "none", authValue: ""
     };
 
