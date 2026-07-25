@@ -250,8 +250,6 @@ def gen_code(plan):
     """
     name = plan.get("name", "u")
     raw_url = str(plan.get("url") or "http://localhost")
-    if raw_url in ("http://localhost", "http://127.0.0.1", "localhost", "127.0.0.1"):
-        raw_url = "http://127.0.0.1:8000"
     url = re.sub(r'[^\w\-/:,.?&=+%~#]', '', raw_url)[:500]
     if not is_safe_url(url):
         url = "http://localhost"
