@@ -9,3 +9,7 @@ generated_tests/
 *.key
 *.pem
 .ai_key.enc
+PROJECT_SUMMARY.md
+INTERVIEW_QA.md
+COMPLETE.md
+COMPLETE.html
