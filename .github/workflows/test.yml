@@ -73,8 +73,9 @@ jobs:
 
   deploy-report:
     needs: test
-    if: always()
+    if: always() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Download all reports
         uses: actions/download-artifact@v4

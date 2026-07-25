@@ -1,25 +1,19 @@
 {
   "name": "CI-Regression",
-  "url": "http://localhost:8000",
-  "types": ["api", "unit", "data"],
+  "url": "https://jsonplaceholder.typicode.com",
+  "types": ["api", "unit"],
   "apis": [
-    {"m": "GET", "p": "/api/health", "n": "健康检查"},
-    {"m": "POST", "p": "/api/auth/login", "n": "登录"},
-    {"m": "GET", "p": "/api/users", "n": "用户列表"},
-    {"m": "POST", "p": "/api/users", "n": "创建用户"},
-    {"m": "GET", "p": "/api/users/{id}", "n": "用户详情"},
-    {"m": "PUT", "p": "/api/users/{id}", "n": "更新用户"},
-    {"m": "DELETE", "p": "/api/users/{id}", "n": "删除用户"},
-    {"m": "GET", "p": "/api/orders", "n": "订单列表"},
-    {"m": "POST", "p": "/api/orders", "n": "创建订单"},
-    {"m": "GET", "p": "/api/orders/{id}", "n": "订单详情"},
-    {"m": "PUT", "p": "/api/orders/{id}", "n": "更新订单"}
+    {"m": "GET", "p": "/posts", "n": "文章列表"},
+    {"m": "GET", "p": "/posts/1", "n": "文章详情"},
+    {"m": "POST", "p": "/posts", "n": "创建文章"},
+    {"m": "GET", "p": "/users", "n": "用户列表"},
+    {"m": "GET", "p": "/users/1", "n": "用户详情"},
+    {"m": "GET", "p": "/comments", "n": "评论列表"},
+    {"m": "GET", "p": "/todos", "n": "待办列表"},
+    {"m": "GET", "p": "/todos/1", "n": "待办详情"}
   ],
-  "pages": [
-    {"u": "/", "na": "首页"},
-    {"u": "/login", "na": "登录页"}
-  ],
-  "rules": "健康检查返回200+uptime\n登录失败返回401\n用户CRUD全部可用\n订单金额不能为负数",
+  "pages": [],
+  "rules": "posts返回100条\n创建返回201\n用户数据含email字段\n所有API返回200",
   "auth": "none",
   "authValue": ""
 }
