@@ -232,7 +232,34 @@ def _exact_test(method, path, title):
     """Generate a targeted test based on the scenario title from AI preview.
     Returns (test_name, stmt, check) tuple."""
     t = title.lower()
-    # 1) Main action keywords first — they determine the primary assertion
+    # Security/error keywords first — they override main action when present
+    if any(kw in t for kw in ["sql","sqli","注入","injection"]):
+        stmt = f'c.request("{method}","{path}?q=%(27)or%(27)1%(27)=%(27)1".replace("%(27)","\'"))'
+        return ("sql_inject", stmt, "r.status_code < 500 and ('syntax' not in r.text.lower() or r.status_code >= 400)")
+    if any(kw in t for kw in ["xss","脚本","script","cross"]):
+        stmt = f'c.request("{method}","{path}?q=%3Cscript%3Ealert(1)%3C/script%3E")'
+        if method in ("POST", "PUT", "PATCH"):
+            stmt = f'c.{method.lower()}("{path}", json={{"q":"<script>alert(1)</script>"}})'
+        return ("xss", stmt, "r.status_code < 500 and 'script' not in r.text.lower()")
+    if any(kw in t for kw in ["缺少","必填","缺失","空","empty"]):
+        stmt = f'c.request("{method}","{path}")' if method != "POST" else f'c.post("{path}")'
+        return ("missing_field", stmt, "r.status_code in (400, 422, 401)")
+    if any(kw in t for kw in ["未认证","未授权","无权限","unauth","token","forbidden","无认证"]):
+        stmt = f'c.request("{method}","{path}", headers={{"Authorization":""}})'
+        return ("unauthorized", stmt, "r.status_code in (401, 403)")
+    if any(kw in t for kw in ["不存在","404","not found","找不到"]):
+        stmt = f'c.request("{method}","{path}")'
+        return ("not_found", stmt, "r.status_code in (404, 400)")
+    if any(kw in t for kw in ["无效","非法","invalid","格式","bad","mail"]):
+        stmt = f'c.{method.lower()}("{path}", json={{"email":"not-an-email","name":"t"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=!!!")'
+        return ("invalid_input", stmt, "r.status_code in (400, 422)")
+    if any(kw in t for kw in ["重复","dup","冲突","already"]):
+        stmt = f'c.{method.lower()}("{path}", json={{"name":"dup-test","email":"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
+        return ("duplicate", stmt, "r.status_code in (400, 409)")
+    if any(kw in t for kw in ["过短","short","超长","long","过长","溢出","overflow"]):
+        stmt = f'c.{method.lower()}("{path}", json={{"name":"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
+        return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500)
+    # Positive scenarios — only reached if no error keyword matched
     if any(kw in t for kw in ["创建","create","新增","add","注册"]):
         stmt = f'c.{method.lower()}("{path}", json={{"name":"test-user","email":"test@example.com","password":"Test123!"}})'
         return ("create_ok", stmt, "r.status_code in (200, 201)")
@@ -254,34 +281,6 @@ def _exact_test(method, path, title):
     if any(kw in t for kw in ["健康","health","状态","status","ping"]):
         stmt = f'c.request("{method}","{path}")'
         return ("health_ok", stmt, "r.status_code == 200")
-    # 2) Error/edge scenario modifiers — checked after main action
-    if any(kw in t for kw in ["缺少","必填","缺失","空","empty"]):
-        stmt = f'c.request("{method}","{path}")' if method != "POST" else f'c.post("{path}")'
-        return ("missing_field", stmt, "r.status_code in (400, 422, 401)")
-    if any(kw in t for kw in ["不存在","404","not found","找不到"]):
-        stmt = f'c.request("{method}","{path}")'
-        return ("not_found", stmt, "r.status_code in (404, 400)")
-    if any(kw in t for kw in ["sql","sqli","注入","injection"]):
-        stmt = f'c.request("{method}","{path}?q=%(27)or%(27)1%(27)=%(27)1".replace("%(27)","\'"))'
-        return ("sql_inject", stmt, "r.status_code < 500 and ('syntax' not in r.text.lower() or r.status_code >= 400)")
-    if any(kw in t for kw in ["xss","脚本","script","cross"]):
-        stmt = f'c.request("{method}","{path}?q=%3Cscript%3Ealert(1)%3C/script%3E")'
-        if method in ("POST", "PUT", "PATCH"):
-            stmt = f'c.{method.lower()}("{path}", json={{"q":"<script>alert(1)</script>"}})'
-        return ("xss", stmt, "r.status_code < 500 and 'script' not in r.text.lower()")
-    if any(kw in t for kw in ["重复","dup","冲突","already"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"dup-test","email":"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
-        return ("duplicate", stmt, "r.status_code in (400, 409)")
-    if any(kw in t for kw in ["未认证","未授权","无权限","unauth","token","forbidden","无认证","unauthorized"]):
-        stmt = f'c.request("{method}","{path}", headers={{"Authorization":""}})'
-        return ("unauthorized", stmt, "r.status_code in (401, 403)")
-    if any(kw in t for kw in ["无效","非法","invalid","格式","bad","mail"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"email":"not-an-email","name":"t"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=!!!")'
-        return ("invalid_input", stmt, "r.status_code in (400, 422)")
-    if any(kw in t for kw in ["过短","short","超长","long","过长","溢出","overflow"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
-        return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500")
-    # 3) Normal/general scenarios
     if method in ("POST", "PUT", "PATCH"):
         stmt = f'c.{method.lower()}("{path}", json={{"test":"value"}})'
         return ("ok", stmt, "r.status_code < 500")
