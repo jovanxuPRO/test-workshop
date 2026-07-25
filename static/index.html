@@ -340,7 +340,7 @@ function addPg() {
 function save() {
     const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
     const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
-    const d = {name: document.getElementById("p-name").value, url: document.getElementById("p-url").value, rules: document.getElementById("p-rules").value, apis, pgs, auth: document.getElementById("p-auth").value};
+    const d = {name: document.getElementById("p-name").value, url: fixUrl(document.getElementById("p-url").value), rules: document.getElementById("p-rules").value, apis, pgs, auth: document.getElementById("p-auth").value};
     try { localStorage.setItem("wiz", JSON.stringify(d)); } catch(e) {}
 }
 function restore() {

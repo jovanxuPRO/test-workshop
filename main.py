@@ -253,6 +253,9 @@ def gen_code(plan):
     url = re.sub(r'[^\w\-/:,.?&=+%~#]', '', raw_url)[:500]
     if not is_safe_url(url):
         url = "http://localhost"
+    # Auto-correct bare localhost URLs → http://127.0.0.1:8000
+    if url in ("http://localhost", "https://localhost", "http://127.0.0.1", "https://127.0.0.1"):
+        url = "http://127.0.0.1:8000"
     apis = plan.get("apis", []); pages = plan.get("pages", [])
     rules = plan.get("rules", []); types = plan.get("types", ["api", "ui", "data"])
     out = os.path.join(GEN, safe(name) + "_" + datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6])
