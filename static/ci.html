@@ -178,36 +178,26 @@ async function startCI() {
 
     setStep(2);
     document.getElementById('ci-log').classList.remove('hidden');
-    document.getElementById('ci-log').textContent = '⏳ AI 正在分析 API 生成测试用例...\n';
+    document.getElementById('ci-log').textContent = '⏳ 正在生成测试用例...\n';
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').classList.remove('hidden');
     document.getElementById('progress-row').classList.remove('hidden');
-    document.getElementById('ci-status').innerHTML = '<span class="status-running">🤖 AI 分析中...</span>';
-    document.getElementById('help-msg').innerHTML = '<strong>第2步进行中：</strong>AI 先分析接口生成用例，再执行测试。';
+    document.getElementById('ci-status').innerHTML = '<span class="status-running">⏳ 正在执行 CI 测试...</span>';
+    document.getElementById('help-msg').innerHTML = '<strong>第2步进行中：</strong>测试正在后台执行。';
 
-    // Step 1: AI generate test cases
-    var apis = [{m:"GET",p:"/",n:"首页"},{m:"GET",p:"/api/tc",n:"用例列表"},{m:"GET",p:"/api/history-data",n:"执行历史"},{m:"GET",p:"/api/report-count",n:"报告摘要"}];
-    try {
-        var aiCfg = {model:'',base_url:''};
-        try { var c=JSON.parse(localStorage.getItem('ai_profiles')||'[]'); var a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{}; aiCfg.model=a.model||''; aiCfg.base_url=a.base_url||''; } catch(e) {}
-        var aiResp = await fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis:apis,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url})});
-        var aiData = await aiResp.json();
-        var suggestions = aiData.suggestions||[];
-        if (suggestions.length) {
-            document.getElementById('ci-log').textContent += '✅ AI 生成了 '+suggestions.length+' 条用例\n';
-            apis = suggestions.map(s => ({m:s.method||'GET', p:s.path||'/', n:s.title||s.path}));
-        } else {
-            document.getElementById('ci-log').textContent += '⚠ AI 未生成用例，使用默认端点\n';
-        }
-    } catch(e) {
-        document.getElementById('ci-log').textContent += '⚠ AI 调用失败，使用默认端点: '+e.message+'\n';
-    }
-
-    var plan = {name: name, url: url, types: ["api","unit","data"], apis: apis, exact: true,
+    // Use known endpoints — reliable, no AI hallucination
+    var apis = [
+        {m:"GET",p:"/",n:"首页"},
+        {m:"GET",p:"/api/tc",n:"用例列表"},
+        {m:"GET",p:"/api/history-data",n:"执行历史"},
+        {m:"GET",p:"/api/report-count",n:"报告摘要"},
+        {m:"HEAD",p:"/",n:"首页HEAD"},
+        {m:"HEAD",p:"/api/tc",n:"用例列表HEAD"},
+    ];
+    var plan = {name: name, url: url, types: ["api","unit","data"], apis: apis,
         pages: [{u:"/",na:"首页"}], rules: "所有API返回<500\n返回数据为有效JSON", auth: "none", authValue: ""};
 
-    document.getElementById('ci-log').textContent += '⏳ 提交执行计划 ('+apis.length+' 个端点)...\n';
-    document.getElementById('ci-status').innerHTML = '<span class="status-running">⏳ 正在执行 CI 测试...</span>';
+    document.getElementById('ci-log').textContent += '✅ 生成 '+apis.length+' 个测试端点\n⏳ 提交执行计划...\n';
 
     try {
         var pr = await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
