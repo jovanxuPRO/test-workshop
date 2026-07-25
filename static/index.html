@@ -250,6 +250,16 @@ const TPLS = {
         {m:"GET",p:"/api/stats",n:"数据统计"}],
         pgs:[{u:"/",na:"首页",ac:"仪表盘"},{u:"/users-page",na:"用户管理",ac:"增删改"},{u:"/tasks-page",na:"任务管理",ac:"增删改+过滤"}],
         rules:"删除用户后关联任务负责人清空\n统计API数据与实际一致\n状态分布之和=总任务数\n重复用户名/邮箱应被拒绝\n完成率=done/total×100"},
+    demo:{name:"Demo API (企业)",url:"http://127.0.0.1:8000", apis:[
+        {m:"GET",p:"/api/health",n:"健康检查"},{m:"POST",p:"/api/auth/login",n:"登录"},
+        {m:"POST",p:"/api/auth/refresh",n:"刷新Token"},{m:"GET",p:"/api/users",n:"用户列表"},
+        {m:"POST",p:"/api/users",n:"创建用户"},{m:"GET",p:"/api/users/{id}",n:"用户详情"},
+        {m:"PUT",p:"/api/users/{id}",n:"更新用户"},{m:"DELETE",p:"/api/users/{id}",n:"删除用户"},
+        {m:"GET",p:"/api/orders",n:"订单列表"},{m:"POST",p:"/api/orders",n:"创建订单"},
+        {m:"GET",p:"/api/orders/{id}",n:"订单详情"},{m:"PUT",p:"/api/orders/{id}",n:"更新订单"},
+    ],
+        pgs:[{u:"/",na:"首页"},{u:"/login",na:"登录页"}],
+        rules:"健康检查返回200\n登录成功返回JWT\n重复用户名应被拒绝\n订单金额不能为负数\n并发登录不互踢"},
     baidu:{name:"Baidu 百度全量",url:"https://www.baidu.com", apis:[
         {m:"GET",p:"/",n:"首页"},
         {m:"HEAD",p:"/",n:"首页HEAD"},
@@ -829,8 +839,8 @@ function importSelectedTCs() {
 // ===== INIT =====
 initTpls();
 try {
-    var tplBtn = document.querySelector('[data-k="baidu"]');
-    if (tplBtn) apply("baidu", tplBtn);
+    var tplBtn = document.querySelector('[data-k="demo"]');
+    if (tplBtn) apply("demo", tplBtn);
 } catch(e) { console.error(e); }
 restore();  // Override with saved state if exists
 if (!document.querySelector("#api-list tr")) addApi();

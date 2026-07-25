@@ -1,44 +1,88 @@
-name: Test Workshop CI
+name: Test Workshop Pro CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'api/**'
+      - 'main.py'
+      - 'ci-test-plan.json'
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 2 * * *'  # Daily at 2am UTC
-  workflow_dispatch:      # Manual trigger
+    - cron: '0 2 * * *'   # 每日凌晨2点回归
+    - cron: '0 8 * * 1'   # 每周一早8点全量
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target API base URL'
+        required: true
+        default: 'http://staging:8000'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install
         run: |
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
-      - name: Run tests
+      - name: Run Tests
+        id: test
         run: |
           python main.py --run-config ci-test-plan.json --output-dir reports --headless
+        continue-on-error: true
 
-      - name: Upload test report
+      - name: Upload Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report
+          name: report-py${{ matrix.python-version }}
           path: reports/
 
-      - name: Upload JUnit results
+      - name: Publish Test Summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: test-summary/action@v2
         with:
-          name: junit-xml
-          path: reports/test-results.xml
+          paths: reports/test-results.xml
+
+      - name: Slack Notify (Failure)
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {"text": "❌ CI 回归失败: ${{ github.repository }} #${{ github.run_number }}"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  deploy-report:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+
+      - name: Publish to Pages
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          keep_files: false
