@@ -57,16 +57,23 @@ _exec_sem = asyncio.Semaphore(3)
 _AI_ENC_FILE = os.path.join(BASE, ".ai_key.enc")
 import hashlib as _hashlib, secrets as _secrets
 
-_fernet_secret = _hashlib.pbkdf2_hmac(
-    "sha256", os.environ.get("TW_SECRET", BASE).encode(),
-    b"test-workshop-ai-key-v1", 100000, dklen=32
-)
+_SECRET_FILE = os.path.join(BASE, ".tw_secret")
+if os.environ.get("TW_SECRET"):
+    _fernet_key = _hashlib.pbkdf2_hmac("sha256", os.environ["TW_SECRET"].encode(), b"test-workshop-ai-key-v1", 100000, dklen=32)
+else:
+    # Generate & persist a random key on first run
+    if not os.path.exists(_SECRET_FILE):
+        _rk = _secrets.token_hex(32)
+        with open(_SECRET_FILE, "w") as f: f.write(_rk)
+    else:
+        with open(_SECRET_FILE) as f: _rk = f.read().strip()
+    _fernet_key = _hashlib.pbkdf2_hmac("sha256", _rk.encode(), b"test-workshop-ai-key-v1", 100000, dklen=32)
 
 
 def _encrypt_key(plain: str) -> bytes:
     """Encrypt with random IV + HMAC-XOR stream + 16-byte auth tag."""
     from base64 import urlsafe_b64encode as b64e
-    key_bytes = _fernet_secret
+    key_bytes = _fernet_key
     iv = _secrets.token_bytes(32)
     data = plain.encode()
     import hmac, hashlib
@@ -87,13 +94,13 @@ def _decrypt_key(data: bytes) -> str:
         raise ValueError("Invalid encrypted data")
     payload, tag = raw[:-16], raw[-16:]
     import hmac, hashlib
-    expected = hmac.new(_fernet_secret, payload, hashlib.sha256).digest()[:16]
+    expected = hmac.new(_fernet_key, payload, hashlib.sha256).digest()[:16]
     if not hmac.compare_digest(tag, expected):
         raise ValueError("Authentication failed")
     iv, encrypted = payload[:32], payload[32:]
-    stream = hmac.new(_fernet_secret, iv, hashlib.sha256).digest()
+    stream = hmac.new(_fernet_key, iv, hashlib.sha256).digest()
     while len(stream) < len(encrypted):
-        stream += hmac.new(_fernet_secret, stream[-32:], hashlib.sha256).digest()
+        stream += hmac.new(_fernet_key, stream[-32:], hashlib.sha256).digest()
     return bytes(a ^ b for a, b in zip(encrypted, stream[:len(encrypted)])).decode()
 
 
@@ -874,6 +881,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     try: proc.terminate(); proc.kill()
                     except Exception: pass
                     RUN_PROCS.pop(pid, None)
+                    PLANS.pop(pid, None)
                     break
                 try:
                     line = await asyncio.to_thread(q.get, timeout=0.1)
@@ -894,6 +902,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     update_tc_status(plan, xml_path)
                     yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
                     RUN_PROCS.pop(pid, None)
+                    PLANS.pop(pid, None)
                     break
                 st = line.strip()
                 if "PASSED" in st and "::" in st:

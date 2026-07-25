@@ -371,6 +371,8 @@ function fixUrl(u) {
 
 // ===== GENERATE =====
 async function generate() {
+    if (window._generating) return;
+    window._generating = true;
     save();
     const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
     const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
@@ -440,9 +442,11 @@ async function generate() {
         document.getElementById("r-bar").style.background = "#ef5350";
         document.getElementById("r-log").textContent = "网络错误: " + e.message;
         document.getElementById("res-title").textContent = plan.name + " — 连接失败";
+        window._generating = false;
     }
 }
 function _streamSSE(pid, plan) {
+    if (window._activeEvt) { window._activeEvt.close(); window._activeEvt = null; }
     const evt = new EventSource('/api/stream?id=' + pid);
     window._activeEvt = evt;
     if (!window._counters) window._counters = {};
@@ -462,7 +466,7 @@ function _streamSSE(pid, plan) {
             document.getElementById("r-log").scrollTop = document.getElementById("r-log").scrollHeight;
         } else if (d.t === "done") {
             evt.close();
-            window._activeEvt = null;
+            window._activeEvt = null; window._generating = false;
             var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; }
             setTimeout(async ()=>{
                 try{
@@ -483,7 +487,7 @@ function _streamSSE(pid, plan) {
         }
         } catch(e) { /* skip malformed SSE messages */ }
     };
-    evt.onerror = function() { evt.close(); window._activeEvt = null; var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; } var bar = document.getElementById("r-bar"); if(bar) bar.style.background = "#ef5350"; var tit = document.getElementById("res-title"); if(tit) tit.textContent = plan.name + " — 连接中断"; };
+    evt.onerror = function() { evt.close(); window._activeEvt = null; window._generating = false; var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; } var bar = document.getElementById("r-bar"); if(bar) bar.style.background = "#ef5350"; var tit = document.getElementById("res-title"); if(tit) tit.textContent = plan.name + " — 连接中断"; };
 }
 // end _streamSSE
 
