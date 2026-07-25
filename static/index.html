@@ -116,6 +116,26 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <textarea id="p-rules" placeholder="首页HTTP 200\n响应时间<5秒\n数据一致"></textarea>
     </div>
 
+    <div class="card">
+        <h2>5. 业务上下文（可选，大幅提升测试精准度）</h2>
+        <label for="p-context">粘贴 PRD / API 文档 / OpenAPI / 需求描述</label>
+        <textarea id="p-context" placeholder="例如：&#10;Task Manager 是一个任务管理 API。&#10;用户实体包含 username(唯一必填)、email(格式校验)、role(admin/user)。&#10;任务实体包含 title(必填)、status(todo/in_progress/done)、assignee(指向用户id)。&#10;删除用户时需检查无关联任务。订单金额必须 >= 0。&#10;创建任务时自动设置 created 为当前时间，status 默认为 todo。"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-sm" id="btn-analyze" onclick="analyzeContext()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">AI 分析业务语义</button>
+            <button class="btn btn-sm" onclick="document.getElementById('p-context').value='';_ctx={};renderContext()" style="font-size:12px;padding:6px 12px">清除</button>
+            <span id="ctx-hint" style="font-size:11px;color:#888"></span>
+        </div>
+        <div id="ctx-result" style="display:none;margin-top:12px;background:#f0f4ff;border-radius:8px;padding:12px;font-size:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <strong style="color:#5c6bc0">分析结果</strong>
+                <span id="ctx-source" style="font-size:10px;color:#888"></span>
+            </div>
+            <div id="ctx-entities"></div>
+            <div id="ctx-rules"></div>
+            <div id="ctx-states"></div>
+        </div>
+    </div>
+
     <button class="btn" onclick="previewCases()" style="width:100%;background:#5c6bc0;color:#fff;font-size:15px;padding:14px;border:none;border-radius:8px;cursor:pointer;font-weight:700">生成用例预览</button>
     <p style="text-align:center;color:#888;font-size:12px;margin:6px 0">每次生成可能不同 — 不满意可重新生成</p>
 
@@ -342,7 +362,7 @@ function addPg() {
 function save() {
     const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
     const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
-    const d = {name: document.getElementById("p-name").value, url: fixUrl(document.getElementById("p-url").value), rules: document.getElementById("p-rules").value, apis, pgs, auth: document.getElementById("p-auth").value};
+    const d = {name: document.getElementById("p-name").value, url: fixUrl(document.getElementById("p-url").value), rules: document.getElementById("p-rules").value, apis, pgs, auth: document.getElementById("p-auth").value, context: _ctx};
     try { localStorage.setItem("wiz", JSON.stringify(d)); } catch(e) {}
 }
 function restore() {
@@ -358,6 +378,7 @@ function restore() {
             d.pgs.forEach(p => { addPg(); const rows = document.querySelectorAll("#pg-list tr"); const l = rows[rows.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; if(p.br) l.querySelector(".pg-br").value = p.br; });
         }
         if (d.auth) { document.getElementById("p-auth").value = d.auth; toggleAuth(); }
+        if (d.context) { _ctx = d.context; renderContext(); }
     } catch(e) {}
 }
 function fixUrl(u) {
@@ -378,7 +399,7 @@ async function generate() {
     const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
     var rawUrl = document.getElementById("p-url").value.trim();
     rawUrl = fixUrl(rawUrl);
-    const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: rawUrl, apis, pages: pgs, rules: document.getElementById("p-rules").value.split("\n").filter(l=>l.trim()), types: ["api","ui","data"], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value, time: new Date().toLocaleString()};
+    const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: rawUrl, apis, pages: pgs, rules: document.getElementById("p-rules").value.split("\n").filter(l=>l.trim()), types: ["api","ui","data"], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value, context: _ctx, time: new Date().toLocaleString()};
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
     const safePlan = {name: plan.name, url: plan.url, apis: plan.apis, pages: plan.pgs||[], rules: plan.rules, types: plan.types, auth: plan.auth, time: plan.time};
     hist.unshift(safePlan); if (hist.length > 20) hist = hist.slice(0,20); try { localStorage.setItem("plan_hist", JSON.stringify(hist)); } catch(e) {}
@@ -531,6 +552,7 @@ async function execHist() {
         types: ["api","ui","data"],
         auth: document.getElementById("p-auth").value,
         authValue: document.getElementById("p-auth-value").value,
+        context: _ctx,
     };
     document.getElementById("dash").classList.remove("hidden");
     document.getElementById("dash-title").textContent = plan.name + " — 执行中...";
@@ -730,6 +752,7 @@ async function execPreviewed() {
         exact: true,
         auth: document.getElementById("p-auth").value,
         authValue: document.getElementById("p-auth-value").value,
+        context: _ctx,
     };
     const hasPages = (window._previewPgs||[]).length > 0 || document.querySelectorAll("#pg-list tr").length > 0;
     if (hasPages) plan.types.push('ui');
@@ -864,6 +887,58 @@ restore();  // Override with saved state if exists
 if (!document.querySelector("#api-list tr")) addApi();
 if (!document.querySelector("#pg-list tr")) addPg();
 
+// ===== BUSINESS CONTEXT =====
+var _ctx = {};
+function renderContext() {
+    var d = document.getElementById('ctx-result');
+    if (!_ctx.entities && !_ctx.business_rules) { d.style.display = 'none'; return; }
+    d.style.display = 'block';
+    document.getElementById('ctx-source').textContent = '来源: ' + (_ctx._source || '分析');
+    var html = '';
+    if (_ctx.entities && _ctx.entities.length) {
+        html += '<div style="margin-bottom:8px">📦 <b>实体:</b> ';
+        html += _ctx.entities.map(e => '<span style="background:#e8eaf6;padding:2px 8px;border-radius:4px;margin:2px;display:inline-block">' + he(e.name||e) + (e.fields ? ' (' + e.fields.join(',') + ')' : '') + '</span>').join(' ');
+        html += '</div>';
+    }
+    if (_ctx.business_rules && _ctx.business_rules.length) {
+        html += '<div style="margin-bottom:8px">📋 <b>业务规则:</b><br>';
+        html += _ctx.business_rules.map(r => '&nbsp;&nbsp;• ' + he(typeof r === 'string' ? r : r)).join('<br>');
+        html += '</div>';
+    }
+    if (_ctx.state_machine && _ctx.state_machine.length) {
+        html += '<div>🔄 <b>状态机:</b><br>';
+        _ctx.state_machine.forEach(sm => {
+            html += '&nbsp;&nbsp;' + he(sm.entity||'') + ': ' + (sm.states||[]).join(' → ') + '<br>';
+        });
+        html += '</div>';
+    }
+    document.getElementById('ctx-entities').innerHTML = html;
+    document.getElementById('ctx-rules').innerHTML = '';
+    document.getElementById('ctx-states').innerHTML = '';
+}
+async function analyzeContext() {
+    var text = document.getElementById('p-context').value.trim();
+    if (!text) { alert('请先输入业务文档内容'); return; }
+    var btn = document.getElementById('btn-analyze');
+    btn.textContent = '分析中...'; btn.disabled = true;
+    try {
+        var aiCfg = {};
+        try { var c=JSON.parse(localStorage.getItem('ai_profiles')||'[]'); var a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{}; aiCfg.model=a.model||''; aiCfg.base_url=a.base_url||''; } catch(e) {}
+        var r = await fetch('/api/analyze-context', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:text, model:aiCfg.model, base_url:aiCfg.base_url})});
+        var d = await r.json();
+        if (d.ok && d.context) {
+            _ctx = d.context; _ctx._source = d.source;
+            renderContext();
+            document.getElementById('ctx-hint').textContent = '✅ 已分析 (' + d.source + ')';
+            save();
+        } else {
+            document.getElementById('ctx-hint').textContent = '⚠ ' + (d.error || '分析失败');
+        }
+    } catch(e) {
+        document.getElementById('ctx-hint').textContent = '⚠ 网络错误: ' + e.message;
+    }
+    btn.textContent = 'AI 分析业务语义'; btn.disabled = false;
+}
 // ===== AI CONFIG (multi-profile) =====
 let _aiProfiles = [], _aiActiveId = '', _aiEditingId = '';
 

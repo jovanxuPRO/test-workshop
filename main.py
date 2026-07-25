@@ -228,10 +228,26 @@ def safe_path(s):
 def _json_err(msg, status=200):
     return {"ok": False, "error": msg}
 
-def _exact_test(method, path, title):
+def _exact_test(method, path, title, entities=None):
     """Generate a targeted test based on the scenario title from AI preview.
+    Uses business context entities for smarter field names.
     Returns (test_name, stmt, check) tuple."""
     t = title.lower()
+    # Try to find matching entity for this path to use real field names
+    entity_fields = []
+    if entities:
+        p_lower = path.lower()
+        for ent in entities:
+            ename = (ent.get("name", "") if isinstance(ent, dict) else str(ent)).lower()
+            fields = ent.get("fields", []) if isinstance(ent, dict) else []
+            if ename and ename in p_lower:
+                entity_fields = fields
+                break
+    # Build smart payloads using real field names when available
+    f0 = entity_fields[0] if len(entity_fields) > 0 else "username"
+    f1 = entity_fields[1] if len(entity_fields) > 1 else "email"
+    f2 = entity_fields[2] if len(entity_fields) > 2 else "role"
+    f3 = entity_fields[3] if len(entity_fields) > 3 else "password"
     # Security/error keywords first — they override main action when present
     if any(kw in t for kw in ["sql","sqli","注入","injection"]):
         stmt = f'c.request("{method}","{path}?q=%(27)or%(27)1%(27)=%(27)1".replace("%(27)","\'"))'
@@ -250,21 +266,21 @@ def _exact_test(method, path, title):
     if any(kw in t for kw in ["不存在","404","not found","找不到"]):
         stmt = f'c.request("{method}","{path}")'
         return ("not_found", stmt, "r.status_code in (404, 400)")
-    if any(kw in t for kw in ["无效","非法","invalid","格式","bad","mail"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"email":"not-an-email","username":"t"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=!!!")'
+    if any(kw in t for kw in ["无效","非法","invalid","格式","bad"]):
+        stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f1)}:"not-an-email",{json.dumps(f0)}:"t"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=!!!")'
         return ("invalid_input", stmt, "r.status_code in (400, 422)")
     if any(kw in t for kw in ["重复","dup","冲突","already"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"username":"dup-test","email":"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
+        stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"dup-test",{json.dumps(f1)}:"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
         return ("duplicate", stmt, "r.status_code in (400, 409)")
     if any(kw in t for kw in ["过短","short","超长","long","过长","溢出","overflow"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"username":"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
+        stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
         return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500")
     # Positive scenarios — only reached if no error keyword matched
     if any(kw in t for kw in ["创建","create","新增","add","注册"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"username":"test-user","email":"test@example.com","password":"Test123!"}})'
+        stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"test-user",{json.dumps(f1)}:"test@example.com",{json.dumps(f3)}:"Test123!"}})'
         return ("create_ok", stmt, "r.status_code in (200, 201)")
     if any(kw in t for kw in ["更新","update","修改","edit","replace"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"username":"updated-name"}})'
+        stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"updated-name"}})'
         return ("update_ok", stmt, "r.status_code in (200, 201, 204)")
     if any(kw in t for kw in ["删除","delete","remove"]):
         stmt = f'c.request("{method}","{path}")'
@@ -316,7 +332,16 @@ def gen_code(plan):
     elif re.match(r'^https?://localhost:\d+', url):
         url = url.replace('localhost', '127.0.0.1')
     apis = plan.get("apis", []); pages = plan.get("pages", [])
-    rules = plan.get("rules", []); types = plan.get("types", ["api", "ui", "data"])
+    rules = list(plan.get("rules", [])); types = plan.get("types", ["api", "ui", "data"])
+    # Incorporate business context into test generation
+    ctx = plan.get("context") or {}
+    if isinstance(ctx.get("business_rules"), list):
+        for r in ctx["business_rules"]:
+            if isinstance(r, str) and r not in rules:
+                rules.append(r)
+    # Store ctx for use in test generators
+    ctx_entities = ctx.get("entities", [])
+    ctx_rules = ctx.get("business_rules", [])
     out = os.path.join(GEN, safe(name) + "_" + datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6])
     # Cleanup: keep only last 20 test dirs by modification time
     try:
@@ -436,8 +461,8 @@ def gen_code(plan):
             lines.append(f'    """{m} {p}"""')
             lines.append("")
             if exact:
-                # Generate a meaningful test based on the title/scenario name
-                tests = [_exact_test(m, tp, n)]
+                # Generate a meaningful test based on the title/scenario name + context
+                tests = [_exact_test(m, tp, n, ctx_entities)]
             elif m == "GET":
                 tests = [
                     ("ok", f'c.get("{tp}")', "r.status_code in (200,301,302,304)"),
@@ -1342,6 +1367,94 @@ async def ai_suggest(request: Request):
     except Exception as e:
         logger.error(f"ai-suggest crashed: {e}", exc_info=_DEBUG)
         return {"suggestions": [], "source": "error", "ai_error": str(e)[:200]}
+
+
+@app.post("/api/analyze-context")
+async def analyze_context(request: Request):
+    """AI-powered business context analysis from PRD/docs. Extracts entities, relations, state machines, business rules."""
+    try:
+        body = await request.json()
+        text = (body.get("text", "") or "").strip()
+        if not text:
+            return {"ok": False, "error": "请提供业务文档内容"}
+        if len(text) > 50000:
+            text = text[:50000]
+        model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
+        base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
+        if not is_safe_url(base_url):
+            return {"ok": False, "error": "AI Base URL 安全策略拒绝"}
+
+        if _ai_key and len(_ai_key) >= 20:
+            try:
+                result = await _analyze_with_ai(text, model, base_url)
+                if result:
+                    return {"ok": True, "source": "ai", "context": result}
+            except Exception as e:
+                logger.warning(f"AI context analysis failed: {type(e).__name__}")
+        # Fallback: regex-based heuristic extraction
+        result = _analyze_with_heuristic(text)
+        return {"ok": True, "source": "heuristic", "context": result}
+    except Exception as e:
+        logger.error(f"analyze-context crashed: {e}", exc_info=_DEBUG)
+        return {"ok": False, "error": str(e)[:200]}
+
+
+async def _analyze_with_ai(text, model, base_url):
+    import httpx, random
+    prompt = f"""你是资深系统分析师。从以下业务文档中提取结构化信息，直接输出 JSON（不要 markdown）：
+
+{text[:8000]}
+
+输出格式：
+{{
+  "entities": [{{"name":"用户","fields":["id","username","email","role"],"constraints":["username唯一","email格式"]}}],
+  "relations": [{{"from":"用户","to":"任务","type":"1对多","via":"userId"}}],
+  "state_machine": [{{"entity":"任务","states":["todo","in_progress","done"],"transitions":["todo→in_progress","in_progress→done"]}}],
+  "business_rules": ["订单金额>=0","删除用户前检查关联任务","email全局唯一"]
+}}
+
+只输出 JSON，不要解释。"""
+    async with httpx.AsyncClient(timeout=90) as client:
+        r = await client.post(f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {_ai_key}"},
+            json={"model": model, "messages": [{"role": "user", "content": prompt}],
+                  "temperature": 0.3, "max_tokens": 4000})
+        if r.status_code != 200:
+            raise Exception(f"AI API {r.status_code}")
+        content = r.json()["choices"][0]["message"]["content"].strip()
+        if not content:
+            return None
+        # Extract JSON from response
+        s, e = content.find("{"), content.rfind("}")
+        if s >= 0 and e > s:
+            return json.loads(content[s:e+1])
+        return None
+
+
+def _analyze_with_heuristic(text):
+    """Regex-based heuristic extraction for when AI is unavailable."""
+    entities, relations, rules = [], [], []
+    # Extract capitalized Chinese/English entity names
+    import re
+    for m in re.finditer(r'(?:实体|对象|表|资源)[：:]\s*(\S+)', text):
+        entities.append({"name": m.group(1), "fields": [], "constraints": []})
+    for m in re.finditer(r'(?:API|接口|端点)\s*[:：/]\s*(\S+)', text):
+        name = m.group(1).strip("/")
+        if not any(e["name"] == name for e in entities):
+            entities.append({"name": name, "fields": [], "constraints": []})
+    if not entities:
+        entities = [{"name": "资源", "fields": [], "constraints": []}]
+    # Extract rules
+    for line in text.split("\n"):
+        line = line.strip()
+        if re.search(r'(?:必须|禁止|不能|应|须|>=|<=|!=|正则|unique|唯一|必填)', line):
+            rules.append(line[:200])
+    return {
+        "entities": entities[:10],
+        "relations": relations[:10],
+        "state_machine": [],
+        "business_rules": rules[:20]
+    }
 
 
 async def _call_llm(apis, seed, model, base_url):
