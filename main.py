@@ -232,7 +232,29 @@ def _exact_test(method, path, title):
     """Generate a targeted test based on the scenario title from AI preview.
     Returns (test_name, stmt, check) tuple."""
     t = title.lower()
-    # Negative/error scenarios
+    # 1) Main action keywords first — they determine the primary assertion
+    if any(kw in t for kw in ["创建","create","新增","add","注册"]):
+        stmt = f'c.{method.lower()}("{path}", json={{"name":"test-user","email":"test@example.com","password":"Test123!"}})'
+        return ("create_ok", stmt, "r.status_code in (200, 201)")
+    if any(kw in t for kw in ["更新","update","修改","edit","replace"]):
+        stmt = f'c.{method.lower()}("{path}", json={{"name":"updated-name"}})'
+        return ("update_ok", stmt, "r.status_code in (200, 201, 204)")
+    if any(kw in t for kw in ["删除","delete","remove"]):
+        stmt = f'c.request("{method}","{path}")'
+        return ("delete_ok", stmt, "r.status_code in (200, 204)")
+    if any(kw in t for kw in ["分页","page","limit","列表","list","查询","query"]):
+        stmt = f'c.request("{method}","{path}?page=1&limit=10")' if method == "GET" else f'c.request("{method}","{path}")'
+        return ("query_ok", stmt, "r.status_code == 200")
+    if any(kw in t for kw in ["详情","detail","单个","id","查看","获取"]):
+        stmt = f'c.request("{method}","{path}")'
+        return ("detail_ok", stmt, "r.status_code in (200, 404)")
+    if any(kw in t for kw in ["登录","login","auth"]):
+        stmt = f'c.{method.lower()}("{path}", json={{"username":"admin","password":"admin"}})'
+        return ("login_ok", stmt, "r.status_code in (200, 201)")
+    if any(kw in t for kw in ["健康","health","状态","status","ping"]):
+        stmt = f'c.request("{method}","{path}")'
+        return ("health_ok", stmt, "r.status_code == 200")
+    # 2) Error/edge scenario modifiers — checked after main action
     if any(kw in t for kw in ["缺少","必填","缺失","空","empty"]):
         stmt = f'c.request("{method}","{path}")' if method != "POST" else f'c.post("{path}")'
         return ("missing_field", stmt, "r.status_code in (400, 422, 401)")
@@ -247,7 +269,7 @@ def _exact_test(method, path, title):
         if method in ("POST", "PUT", "PATCH"):
             stmt = f'c.{method.lower()}("{path}", json={{"q":"<script>alert(1)</script>"}})'
         return ("xss", stmt, "r.status_code < 500 and 'script' not in r.text.lower()")
-    if any(kw in t for kw in ["重复","dup","exist","冲突","已存在","already"]):
+    if any(kw in t for kw in ["重复","dup","冲突","already"]):
         stmt = f'c.{method.lower()}("{path}", json={{"name":"dup-test","email":"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
         return ("duplicate", stmt, "r.status_code in (400, 409)")
     if any(kw in t for kw in ["未认证","未授权","无权限","unauth","token","forbidden","无认证","unauthorized"]):
@@ -259,29 +281,7 @@ def _exact_test(method, path, title):
     if any(kw in t for kw in ["过短","short","超长","long","过长","溢出","overflow"]):
         stmt = f'c.{method.lower()}("{path}", json={{"name":"a"*1000}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}?q=a"+"a"*500)'
         return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500")
-    # Positive/normal scenarios
-    if any(kw in t for kw in ["创建","create","新增","add","注册"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"test-user","email":"test@example.com","password":"Test123!"}})'
-        return ("create_ok", stmt, "r.status_code in (200, 201)")
-    if any(kw in t for kw in ["更新","update","修改","edit","replace"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"name":"updated-name"}})'
-        return ("update_ok", stmt, "r.status_code in (200, 201, 204)")
-    if any(kw in t for kw in ["删除","delete","remove"]):
-        stmt = f'c.request("{method}","{path}")'
-        return ("delete_ok", stmt, "r.status_code in (200, 204)")
-    if any(kw in t for kw in ["分页","page","limit","列表","list","查询","query","get","获取"]):
-        stmt = f'c.request("{method}","{path}?page=1&limit=10")' if method == "GET" else f'c.request("{method}","{path}")'
-        return ("query_ok", stmt, "r.status_code == 200")
-    if any(kw in t for kw in ["详情","detail","单个","id","查看"]):
-        stmt = f'c.request("{method}","{path}")'
-        return ("detail_ok", stmt, "r.status_code in (200, 404)")
-    if any(kw in t for kw in ["登录","login","auth","登录"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"username":"admin","password":"admin"}})'
-        return ("login_ok", stmt, "r.status_code in (200, 201)")
-    if any(kw in t for kw in ["健康","health","状态","status","ping"]):
-        stmt = f'c.request("{method}","{path}")'
-        return ("health_ok", stmt, "r.status_code == 200")
-    # Default: bare request, but with more context
+    # 3) Normal/general scenarios
     if method in ("POST", "PUT", "PATCH"):
         stmt = f'c.{method.lower()}("{path}", json={{"test":"value"}})'
         return ("ok", stmt, "r.status_code < 500")
