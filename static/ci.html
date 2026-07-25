@@ -178,26 +178,51 @@ async function startCI() {
 
     setStep(2);
     document.getElementById('ci-log').classList.remove('hidden');
-    document.getElementById('ci-log').textContent = '⏳ 正在生成测试用例...\n';
+    document.getElementById('ci-log').textContent = '🤖 第1轮：AI 正在分析 API 生成用例...\n';
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').classList.remove('hidden');
     document.getElementById('progress-row').classList.remove('hidden');
-    document.getElementById('ci-status').innerHTML = '<span class="status-running">⏳ 正在执行 CI 测试...</span>';
-    document.getElementById('help-msg').innerHTML = '<strong>第2步进行中：</strong>测试正在后台执行。';
+    document.getElementById('ci-status').innerHTML = '<span class="status-running">🤖 AI 生成中...</span>';
+    document.getElementById('help-msg').innerHTML = '<strong>AI 工作流：</strong>生成 → 筛选验证 → 执行';
 
-    // Use known endpoints — reliable, no AI hallucination
-    var apis = [
+    // Real endpoints — AI can generate creative test cases for these
+    var seedApis = [
         {m:"GET",p:"/",n:"首页"},
         {m:"GET",p:"/api/tc",n:"用例列表"},
         {m:"GET",p:"/api/history-data",n:"执行历史"},
         {m:"GET",p:"/api/report-count",n:"报告摘要"},
         {m:"HEAD",p:"/",n:"首页HEAD"},
-        {m:"HEAD",p:"/api/tc",n:"用例列表HEAD"},
     ];
-    var plan = {name: name, url: url, types: ["api","unit","data"], apis: apis,
+    var validPaths = new Set(seedApis.map(a => a.p));
+
+    // Step 1: AI generate
+    var suggestions = [];
+    try {
+        var aiCfg = {model:'',base_url:''};
+        try { var c=JSON.parse(localStorage.getItem('ai_profiles')||'[]'); var a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{}; aiCfg.model=a.model||''; aiCfg.base_url=a.base_url||''; } catch(e) {}
+        var aiResp = await fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis:seedApis,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url})});
+        var aiData = await aiResp.json();
+        suggestions = aiData.suggestions||[];
+        document.getElementById('ci-log').textContent += '✅ AI 生成了 '+suggestions.length+' 条用例\n';
+    } catch(e) {
+        document.getElementById('ci-log').textContent += '⚠ AI 调用失败: '+e.message+'\n';
+    }
+
+    // Step 2: Filter — keep only cases for real endpoints
+    var before = suggestions.length;
+    suggestions = suggestions.filter(s => validPaths.has(s.path));
+    document.getElementById('ci-log').textContent += '🔍 第2轮：路径筛选 ' + before + ' → ' + suggestions.length + ' 条（移除无效路径）\n';
+
+    // Fallback: if AI returns nothing useful, use seed endpoints
+    var apis = suggestions.length >= 2
+        ? suggestions.map(s => ({m:s.method||'GET', p:s.path||'/', n:s.title||s.path}))
+        : seedApis;
+
+    var plan = {name: name, url: url, types: ["api","unit","data"], apis: apis, exact: true,
         pages: [{u:"/",na:"首页"}], rules: "所有API返回<500\n返回数据为有效JSON", auth: "none", authValue: ""};
 
-    document.getElementById('ci-log').textContent += '✅ 生成 '+apis.length+' 个测试端点\n⏳ 提交执行计划...\n';
+    document.getElementById('ci-log').textContent += '⏳ 第3轮：提交执行 ('+apis.length+' 个端点)...\n';
+    document.getElementById('ci-status').innerHTML = '<span class="status-running">⏳ 执行测试中...</span>';
 
     try {
         var pr = await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
