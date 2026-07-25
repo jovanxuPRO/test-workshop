@@ -1325,12 +1325,30 @@ API列表:
 def _pattern_suggest(apis, seed):
     import random; random.seed(seed)
     suggestions = []
-    step_tmpl = [
-        "1.发送 {m} 请求到 {p} 2.检查状态码 3.验证响应体格式",
-        "1.构造{m}请求{p} 2.发送并等待响应 3.断言状态码<500 4.检查响应头",
-        "1.准备请求参数 2.发送{m} {p} 3.验证状态码 4.解析响应体",
-        "1.设置请求头 2.发送{m}请求到{p} 3.检查HTTP状态 4.验证返回数据"
-    ]
+    step_map = {
+        "正常":"1.发送{m}请求到{p} 2.检查状态码为200/201 3.验证响应体包含预期字段",
+        "列表":"1.发送{m}请求到{p} 2.检查状态码200 3.验证返回JSON数组 4.确认包含必要字段",
+        "详情":"1.发送{m}请求到{p}(替换id为有效值) 2.检查状态码200 3.验证返回单个对象",
+        "创建":"1.准备合法的请求体JSON 2.发送{m}请求到{p} 3.检查状态码201 4.从响应体提取新资源id",
+        "更新":"1.准备需要更新的字段 2.发送{m}请求到{p}(替换id) 3.检查状态码200 4.验证更新后的值",
+        "删除":"1.发送{m}请求到{p}(替换id) 2.检查状态码204 3.再次GET验证404",
+        "缺少":"1.构造不含必填字段的请求体 2.发送{m}请求到{p} 3.检查状态码400/422 4.验证返回描述缺失字段的错误",
+        "无效":"1.构造包含非法格式的请求体 2.发送{m}请求到{p} 3.检查状态码400/422 4.验证错误消息指出问题",
+        "重复":"1.首次创建资源并记录 2.再次用相同字段发送{m}到{p} 3.检查状态码400/409 4.验证返回已存在错误",
+        "不存在":"1.发送{m}请求到{p}(使用不存在的id) 2.检查状态码404 3.验证返回未找到信息",
+        "错误":"1.使用错误的Content-Type 2.发送{m}请求到{p} 3.检查状态码400/415 4.验证不支持提示",
+        "空":"1.发送{m}请求到{p}(不附带请求体) 2.检查状态码400/422 3.验证返回参数要求提示",
+        "登录":"1.发送POST到{p}(正确用户名密码) 2.检查状态码200 3.提取JWT token 4.验证格式",
+        "SQL":"1.在参数中注入SQL片段'OR'1'='1 2.发送{m}请求到{p} 3.检查状态码400/422 4.确认未泄露数据",
+        "XSS":"1.在输入中注入<script>alert(1)</script> 2.发送{m}请求到{p} 3.检查状态码400 4.确认未原样输出",
+        "分页":"1.发送{m}请求到{p}?page=1&size=10 2.检查状态码200 3.验证返回数据不超过10条 4.确认包含总数",
+        "并发":"1.同时发送10个{m}请求到{p} 2.等待全部完成 3.检查所有状态码<500 4.确认无超时",
+        "超时":"1.设请求超时2秒 2.发送{m}请求到{p} 3.检查在超时前响应 4.确认无挂起",
+    }
+    def get_step(s, m, p):
+        for k,v in step_map.items():
+            if k in s: return v.replace("{m}",m).replace("{p}",p)
+        return f"1.发送{m}请求到{p} 2.检查状态码<500 3.验证响应体非空".replace("{m}",m).replace("{p}",p)
     extra = ["并发10请求","超时重试","SQL注入字符","XSS脚本标签","过期Token","大请求体413","不支持MediaType415"]
     exp_var = {"normal":["HTTP 200","HTTP 201","HTTP 200/201/204"],"error":["HTTP 400","HTTP 422","HTTP 400/422"],"general":["HTTP 2xx","HTTP 200/301/302"]}
     pre_var = ["服务已启动","数据库已初始化","缓存已预热","测试数据已准备","Token已获取","无"]
@@ -1355,16 +1373,16 @@ def _pattern_suggest(apis, seed):
                 for s in sc[:keep]:
                     pri="P0" if any(w in s for w in ["正常","正确","登录"]) else ("P1" if any(w in s for w in ["列表","详情"]) else "P2")
                     pool="error" if any(w in s for w in ["缺少","无效","错误","不存在","空","重复"]) else ("normal" if any(w in s for w in ["创建","正常"]) else "general")
-                    suggestions.append({"title":f"{pf}-{s}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var.get(pool,exp_var["general"])),"precondition":random.choice(pre_var),"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
+                    suggestions.append({"title":f"{pf}-{s}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var.get(pool,exp_var["general"])),"precondition":random.choice(pre_var),"steps":get_step(s,m,p)})
                 for s in random.sample(extra,random.randint(0,2)):
-                    suggestions.append({"title":f"{pf}-{s}","priority":"P2","method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(["无","服务已启动"]),"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
+                    suggestions.append({"title":f"{pf}-{s}","priority":"P2","method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(["无","服务已启动"]),"steps":get_step(s,m,p)})
                 break
         if not matched:
             random.shuffle(titles)
             keep=max(3,int(len(titles)*random.uniform(0.7,1.0)))
             for t in titles[:keep]:
                 pri="P0" if "可达" in t or "正常" in t else ("P1" if "验证" in t or "基准" in t else "P2")
-                suggestions.append({"title":f"{pf}-{t}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(pre_var),"steps":random.choice(step_tmpl).replace("{m}",m).replace("{p}",p)})
+                suggestions.append({"title":f"{pf}-{t}","priority":pri,"method":m,"path":p,"expected":random.choice(exp_var["general"]),"precondition":random.choice(pre_var),"steps":get_step(t,m,p)})
     return suggestions
 
 
