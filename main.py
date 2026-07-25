@@ -1291,7 +1291,8 @@ API列表:
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
                   "temperature":0.8+random.random()*0.2,"max_tokens":8000})
-        if r.status_code != 200: raise Exception(f"AI API {r.status_code}")
+        if r.status_code != 200:
+            raise Exception(f"AI API {r.status_code}: {r.text[:200]}")
         text = r.json()["choices"][0]["message"]["content"].strip()
         logger.info(f"AI raw ({len(text)} chars): {repr(text[:200])}")
         import json as _j
