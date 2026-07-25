@@ -1373,6 +1373,9 @@ async def _call_llm(apis, seed, model, base_url):
             raise Exception(f"AI API {r.status_code}: {r.text[:200]}")
         text = r.json()["choices"][0]["message"]["content"].strip()
         logger.info(f"AI raw ({len(text)} chars): {repr(text[:200])}")
+        if not text:
+            logger.warning("AI returned empty content")
+            return None
         items = []
         # 1. JSONL: one object per line
         for line in text.split("\n"):
