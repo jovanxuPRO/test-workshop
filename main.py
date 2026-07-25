@@ -1282,10 +1282,9 @@ API列表:
 {api_lines}
 
 格式（每行独立完整）:
-{{"title":"用户列表正常返回","priority":"P0","expected":"HTTP 200,返回数组","precondition":"数据库已初始化","steps":"GET /api/users","method":"GET","path":"/api/users"}}
-{{"title":"用户列表空参数","priority":"P1","expected":"HTTP 200或400","precondition":"无","steps":"GET /api/users?name=","method":"GET","path":"/api/users"}}
+{{"title":"正常返回用户列表","priority":"P0","expected":"HTTP 200,返回JSON数组","precondition":"服务已启动","steps":"1.构造GET请求 /api/users 2.检查状态码为200 3.验证响应体为JSON数组 4.检查第一条数据含id字段","method":"GET","path":"/api/users"}}
 
-每个API输出5-12行，覆盖正常/异常/边界/安全场景。直接输出JSON行，不要数组符号，不要markdown包裹，不要注释。"""
+每个API输出5-12行，覆盖正常/异常/边界/安全场景。steps字段必须写详细步骤（1.xxx 2.xxx 3.xxx格式）。直接输出JSON行，不要数组符号。"""
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
@@ -1326,7 +1325,12 @@ API列表:
 def _pattern_suggest(apis, seed):
     import random; random.seed(seed)
     suggestions = []
-    step_tmpl = ["发送 {m} {p}","发送 {m} {p}，检查状态码","构造请求 → {m} {p} → 解析响应","1.准备数据 2.发送 {m} {p} 3.验证"]
+    step_tmpl = [
+        "1.发送 {m} 请求到 {p} 2.检查状态码 3.验证响应体格式",
+        "1.构造{m}请求{p} 2.发送并等待响应 3.断言状态码<500 4.检查响应头",
+        "1.准备请求参数 2.发送{m} {p} 3.验证状态码 4.解析响应体",
+        "1.设置请求头 2.发送{m}请求到{p} 3.检查HTTP状态 4.验证返回数据"
+    ]
     extra = ["并发10请求","超时重试","SQL注入字符","XSS脚本标签","过期Token","大请求体413","不支持MediaType415"]
     exp_var = {"normal":["HTTP 200","HTTP 201","HTTP 200/201/204"],"error":["HTTP 400","HTTP 422","HTTP 400/422"],"general":["HTTP 2xx","HTTP 200/301/302"]}
     pre_var = ["服务已启动","数据库已初始化","缓存已预热","测试数据已准备","Token已获取","无"]
