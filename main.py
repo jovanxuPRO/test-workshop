@@ -7,7 +7,7 @@ Key Endpoints:
   POST /api/plan        - Submit test plan, returns session ID
   GET  /api/stream?id=   - SSE stream of real-time test execution
   POST /api/gnr          - Synchronous test generation & execution
-  GET  /api/stop         - Kill running pytest process
+  POST /api/stop         - Kill running pytest process
   GET  /api/report?dir=  - JUnit XML-based ISTQB report
   GET  /api/report-count - Summary counts from latest execution
   GET  /api/report-list  - Browse all historical reports
@@ -674,8 +674,6 @@ def del_history(idx: int):
     return {"ok": True}
 
 
-# Save on each execution
-# In gnr endpoint, after parsing results:
 @app.post("/api/gnr")
 async def gnr(request: Request):
     if not _check_rate("gnr", max_req=20, window=60):
@@ -1370,20 +1368,19 @@ async def _call_llm(apis, seed, model, base_url):
             raise Exception(f"AI API {r.status_code}: {r.text[:200]}")
         text = r.json()["choices"][0]["message"]["content"].strip()
         logger.info(f"AI raw ({len(text)} chars): {repr(text[:200])}")
-        import json as _j
         items = []
         # 1. JSONL: one object per line
         for line in text.split("\n"):
             line = line.strip()
             if line.startswith("{") and line.endswith("}"):
-                try: items.append(_j.loads(line))
-                except _j.JSONDecodeError: pass
+                try: items.append(json.loads(line))
+                except json.JSONDecodeError: pass
         if items: return items
         # 2. Try array [...]
         s, e = text.find("["), text.rfind("]")
         if s >= 0 and e > s:
-            try: return _j.loads(text[s:e+1])
-            except _j.JSONDecodeError: pass
+            try: return json.loads(text[s:e+1])
+            except json.JSONDecodeError: pass
         # 3. Brace depth extraction
         depth, buf = 0, ""
         for ch in text:
@@ -1392,8 +1389,8 @@ async def _call_llm(apis, seed, model, base_url):
             elif ch == '}':
                 depth -= 1
                 if depth == 0:
-                    try: items.append(_j.loads(buf)); buf = ""
-                    except _j.JSONDecodeError: buf = ""
+                    try: items.append(json.loads(buf)); buf = ""
+                    except json.JSONDecodeError: buf = ""
         if items: return items
         raise Exception(f"No parseable objects in {len(text)} chars")
 
