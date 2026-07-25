@@ -106,6 +106,21 @@ td{padding:8px 12px;border-bottom:1px solid #eee}
         </div>
     </div>
 
+    <!-- GitHub Actions control -->
+    <div style="margin-top:14px;padding:12px;background:#e8eaf6;border-radius:8px">
+        <strong style="font-size:13px">🔄 GitHub Actions 远程控制</strong>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <button class="btn" onclick="triggerGitHubCI()" style="background:#5c6bc0;font-size:13px;padding:8px 16px">触发远程 CI</button>
+            <button class="btn" onclick="checkGitHubCI()" style="background:#888;font-size:13px;padding:8px 16px">查看最近状态</button>
+            <span id="github-ci-msg" style="font-size:12px;color:#888"></span>
+        </div>
+        <div id="github-ci-runs" style="margin-top:10px;font-size:12px"></div>
+        <div style="font-size:11px;color:#888;margin-top:8px">
+            需配置环境变量 <code>TW_GITHUB_TOKEN=ghp_xxx</code> 才能使用。<br>
+            Token 获取：GitHub → Settings → Developer settings → Personal access tokens → 勾选 repo 权限
+        </div>
+    </div>
+
     <!-- Progress -->
     <div class="progress-row hidden" id="progress-row">
         <span style="font-size:12px;color:#888;white-space:nowrap" id="progress-text">0%</span>
@@ -210,7 +225,29 @@ async function startCI() {
                     if (d.pct) {
                         document.getElementById('progress-fill').style.width = d.pct+'%';
                         document.getElementById('progress-text').textContent = d.pct+'%';
-                    }
+}
+async function triggerGitHubCI() {
+    var el = document.getElementById('github-ci-msg');
+    el.textContent = '触发中...';
+    try {
+        var r = await fetch('/api/ci-trigger', {method:'POST'});
+        var d = await r.json();
+        el.innerHTML = d.ok ? '<span style="color:#27ae60">✅ '+d.msg+'</span>' : '<span style="color:#ef5350">❌ '+d.error+'</span>';
+    } catch(e) { el.innerHTML = '<span style="color:#ef5350">❌ '+e.message+'</span>'; }
+}
+async function checkGitHubCI() {
+    var el = document.getElementById('github-ci-runs');
+    el.innerHTML = '查询中...';
+    try {
+        var r = await fetch('/api/ci-status');
+        var d = await r.json();
+        if (!d.ok) { el.innerHTML = '<span style="color:#ef5350">'+d.error+'</span>'; return; }
+        el.innerHTML = d.runs.map(run => {
+            var icon = run.conclusion==='success'?'✅':run.conclusion==='failure'?'❌':'⏳';
+            return '<div style="padding:4px 0;border-bottom:1px solid #e0e0e0">'+icon+' <a href="'+run.url+'" target="_blank" style="color:#5c6bc0">'+run.name+'</a> ('+run.status+') - '+new Date(run.created).toLocaleString()+'</div>';
+        }).join('');
+    } catch(e) { el.innerHTML = '<span style="color:#ef5350">'+e.message+'</span>'; }
+}
                 } else if (d.t==='done') {
                     _evt.close(); _evt=null;
                     setStep(3);

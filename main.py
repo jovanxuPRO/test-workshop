@@ -1479,6 +1479,46 @@ def update_tc_status(plan, xml_path):
 def ci_page():
     return FileResponse(os.path.join(BASE, "static", "ci.html"))
 
+
+_GITHUB_TOKEN = os.environ.get("TW_GITHUB_TOKEN", "")
+_GITHUB_REPO = os.environ.get("TW_GITHUB_REPO", "jovanxuPRO/test-workshop")
+
+
+@app.post("/api/ci-trigger")
+async def ci_trigger():
+    """Trigger GitHub Actions workflow_dispatch. Requires TW_GITHUB_TOKEN env var."""
+    if not _GITHUB_TOKEN:
+        return {"ok": False, "error": "GitHub Token 未配置。设置环境变量 TW_GITHUB_TOKEN=ghp_xxx"}
+    import httpx
+    url = f"https://api.github.com/repos/{_GITHUB_REPO}/actions/workflows/test.yml/dispatches"
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(url,
+            headers={"Authorization": f"Bearer {_GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
+            json={"ref": "main"})
+        if r.status_code == 204:
+            logger.info("CI workflow triggered via API")
+            return {"ok": True, "msg": "已触发 GitHub Actions 执行"}
+        return {"ok": False, "error": f"GitHub API 返回 {r.status_code}: {r.text[:200]}"}
+
+
+@app.get("/api/ci-status")
+async def ci_status():
+    """Get latest GitHub Actions run status. Requires TW_GITHUB_TOKEN."""
+    if not _GITHUB_TOKEN:
+        return {"ok": False, "error": "GitHub Token 未配置"}
+    import httpx
+    url = f"https://api.github.com/repos/{_GITHUB_REPO}/actions/runs?per_page=3"
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(url,
+            headers={"Authorization": f"Bearer {_GITHUB_TOKEN}", "Accept": "application/vnd.github+json"})
+        if r.status_code == 200:
+            runs = r.json().get("workflow_runs", [])
+            summary = [{"name": run.get("name",""), "status": run.get("status",""),
+                        "conclusion": run.get("conclusion",""), "url": run.get("html_url",""),
+                        "created": run.get("created_at","")} for run in runs[:5]]
+            return {"ok": True, "runs": summary}
+        return {"ok": False, "error": f"GitHub API {r.status_code}"}
+
 @app.get("/")
 def index():
     return FileResponse(os.path.join(BASE, "static", "index.html"))
