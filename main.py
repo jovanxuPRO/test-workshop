@@ -1327,7 +1327,7 @@ async def ai_suggest(request: Request):
         # Validate base_url to prevent key exfiltration
         if not is_safe_url(base_url):
             return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI Base URL 被安全策略拒绝"}
-        if _ai_key:
+        if _ai_key and len(_ai_key) >= 20:
             try:
                 results = await _call_llm(apis, seed, model, base_url)
                 if results is not None and len(results) > 0:
