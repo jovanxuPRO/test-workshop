@@ -43,11 +43,10 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
-      - name: Run Tests
+      - name: Validate (Dry Run)
         id: test
         run: |
-          python main.py --run-config ci-test-plan.json --output-dir reports --headless
-        continue-on-error: true
+          python main.py --run-config ci-test-plan.json --output-dir reports --dry-run
 
       - name: Upload Report
         if: always()

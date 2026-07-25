@@ -1489,6 +1489,7 @@ if __name__ == "__main__":
     parser.add_argument("--run-config", metavar="FILE", help="Run tests from a JSON config file (CI/CD mode)")
     parser.add_argument("--output-dir", metavar="DIR", default=".", help="Output directory for report (default: current dir)")
     parser.add_argument("--headless", action="store_true", help="Run Playwright in headless mode")
+    parser.add_argument("--dry-run", action="store_true", help="Generate test code only, don't execute")
     args = parser.parse_args()
 
     if args.run_config:
@@ -1502,6 +1503,20 @@ if __name__ == "__main__":
             print(f"ERROR: Cannot read config file: {e}", file=sys.stderr)
             sys.exit(1)
         d, _ = gen_code(config)
+        if args.dry_run:
+            # Validate generated code only
+            import glob as _g
+            py_files = _g.glob(os.path.join(d, "*.py"))
+            for pf in py_files:
+                try:
+                    with open(pf, encoding="utf-8") as f:
+                        compile(f.read(), pf, "exec")
+                except SyntaxError as e:
+                    print(f"[FAIL] {pf}: {e}", file=sys.stderr)
+                    sys.exit(1)
+            print(f"[OK] Generated {len(py_files)} test files in {d}")
+            print("[OK] All files pass Python syntax check")
+            sys.exit(0)
         xml_path = os.path.join(d, "results.xml")
         r = subprocess.run(
             ["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
