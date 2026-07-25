@@ -93,6 +93,19 @@ td{padding:8px 12px;border-bottom:1px solid #eee}
         如需自定义，修改项目根目录的 <code>ci-test-plan.json</code> 文件。
     </div>
 
+    <!-- Schedule -->
+    <div style="margin-top:14px;padding:12px;background:#f8f9fb;border-radius:8px">
+        <strong style="font-size:13px">⏰ 定时执行（本页面保持打开时生效）</strong>
+        <div class="form-row" style="margin-top:8px">
+            <div><label>频率</label><select id="sched-freq" onchange="updateSched()" style="width:120px"><option value="">关闭</option><option value="3600">每小时</option><option value="21600">每6小时</option><option value="86400">每天</option><option value="604800">每周</option></select></div>
+            <div><label>启动时间</label><input id="sched-time" type="time" onchange="updateSched()" style="width:130px"></div>
+            <span id="sched-countdown" style="font-size:12px;color:#888;padding-top:18px"></span>
+        </div>
+        <div style="font-size:11px;color:#888;margin-top:8px">
+            此为本地定时（浏览器需保持打开）。<strong>服务器端定时：</strong>编辑 <code>.github/workflows/test.yml</code> 的 <code>schedule.cron</code> 字段
+        </div>
+    </div>
+
     <!-- Progress -->
     <div class="progress-row hidden" id="progress-row">
         <span style="font-size:12px;color:#888;white-space:nowrap" id="progress-text">0%</span>
@@ -215,7 +228,44 @@ async function startCI() {
                     document.getElementById('btn-start').disabled = false;
                     document.getElementById('btn-stop').classList.add('hidden');
                     document.getElementById('help-msg').innerHTML = '<strong>✅ 第3步完成：</strong>测试已全部执行。点击「查看完整报告」查看详细结果，或查看下表的历史记录。';
-                    loadHistory();
+loadHistory();
+// Load saved schedule
+var schedInterval = null;
+(function(){
+    var s = JSON.parse(localStorage.getItem('ci_schedule')||'{}');
+    if (s.freq) document.getElementById('sched-freq').value = s.freq;
+    if (s.time) document.getElementById('sched-time').value = s.time;
+    updateSched();
+})();
+function updateSched() {
+    var freq = parseInt(document.getElementById('sched-freq').value)||0;
+    var time = document.getElementById('sched-time').value;
+    localStorage.setItem('ci_schedule', JSON.stringify({freq:String(freq), time:time}));
+    if (schedInterval) clearInterval(schedInterval);
+    if (!freq) { document.getElementById('sched-countdown').textContent = ''; return; }
+    function tick() {
+        var now = new Date();
+        var next = new Date();
+        if (time) {
+            var parts = time.split(':');
+            next.setHours(parseInt(parts[0])||0, parseInt(parts[1])||0, 0, 0);
+            if (next <= now) next.setDate(next.getDate()+1);
+            var diff = Math.floor((next - now)/1000);
+            document.getElementById('sched-countdown').textContent = '下次执行: ' + new Date(next).toLocaleString() + ' (还有 '+Math.floor(diff/3600)+'时'+Math.floor(diff%3600/60)+'分)';
+        } else {
+            var diff = freq - (Math.floor(now.getTime()/1000) % freq);
+            document.getElementById('sched-countdown').textContent = '下次执行: ' + Math.floor(diff/3600)+'时'+Math.floor(diff%3600/60)+'分后';
+        }
+    }
+    tick();
+    schedInterval = setInterval(function(){
+        tick();
+        var freq2 = parseInt(document.getElementById('sched-freq').value)||0;
+        if (!freq2) return;
+        var now2 = Math.floor(Date.now()/1000);
+        if (now2 % freq2 < 5) startCI();
+    }, 30000);
+}
                 }
             } catch(ex) {}
         };
