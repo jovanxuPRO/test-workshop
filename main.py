@@ -127,9 +127,9 @@ def _check_rate(key, max_req=60, window=60):
     if len(_rate_limits[key]) >= max_req:
         return False
     _rate_limits[key].append(now)
-    # Per-key cleanup instead of global clear
+    # Periodically clean up stale keys
     if len(_rate_limits) > 5000:
-        _rate_limits = {k: v for k, v in _rate_limits.items() if len(_rate_limits) <= 1000 or any(t > now - window for t in v)}
+        _rate_limits = {k: v for k, v in _rate_limits.items() if any(t > now - window for t in v)}
     return True
 
 
@@ -175,41 +175,32 @@ async def shutdown_cleanup():
 def is_safe_url(url_str):
     """Block SSRF: reject private/internal/reserved IP ranges and file:// scheme."""
     lowered = url_str.lower()
-    if lowered.startswith("file://") or lowered.startswith("ftp://"):
+    if lowered.startswith("file://") or lowered.startswith("ftp://") or lowered.startswith("gopher://"):
         return False
-    # Block known internal hostname patterns before DNS resolution
-    blocked_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"}
-    try:
-        parsed = urllib.parse.urlparse(url_str)
-        host = parsed.hostname
-        if not host: return True
-        if host.lower() in blocked_hosts or host.endswith(".local") or host.endswith(".internal"):
-            return False
-        # Check if host is an IP literal
-        try:
-            ip = ipaddress.ip_address(host)
-        except ValueError:
-            # Hostname — resolve DNS and check the IP too
-            try:
-                resolved = subprocess.run(
-                    ["python", "-c", f"import socket; print(socket.gethostbyname({host!r}))"],
-                    capture_output=True, text=True, timeout=3)
-                ip_str = resolved.stdout.strip()
-                if ip_str:
-                    ip = ipaddress.ip_address(ip_str)
-                else:
-                    return True
-            except Exception:
-                return True
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            return False
-        if ip in (ipaddress.ip_address("169.254.169.254"),):
-            return False
+    # Allow mock_server explicitly (most common dev target)
+    if lowered.startswith("http://127.0.0.1:8000") or lowered.startswith("http://localhost:8000"):
         return True
-    except (ValueError, ipaddress.AddressValueError):
-        return True  # Hostname — will be checked via DNS below, or allow with risk
-    except Exception:
-        return False  # Don't bypass SSRF on unexpected errors
+    parsed = urllib.parse.urlparse(url_str)
+    host = parsed.hostname
+    if not host: return False
+    # Block known internal hostname patterns
+    if host.lower() in {"localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"} or host.endswith(".local") or host.endswith(".internal"):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # Hostname — resolve DNS in-process
+        import socket
+        try:
+            ip_str = socket.gethostbyname(host)
+            ip = ipaddress.ip_address(ip_str)
+        except Exception:
+            return False  # Can't resolve → deny for safety
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        return False
+    if ip == ipaddress.ip_address("169.254.169.254"):
+        return False
+    return True
 
 def safe(s):
     """Sanitize to safe identifier: retain only word chars + CJK, replace rest with _"""
@@ -225,7 +216,10 @@ def safe_path(s):
     s = re.sub(r'[^\w\u4e00-\u9fff\-/:,.?&=+%{}]', '_', s)
     s = re.sub(r'_+', '_', s).strip('_')
     while '..' in s: s = s.replace('..', '.')
-    return s or '/'
+    s = s or '/'
+    if not s.startswith('/') and not s.startswith('http'):
+        s = '/' + s
+    return s
 
 def _json_err(msg, status=200):
     return {"ok": False, "error": msg}
@@ -243,12 +237,12 @@ def _exact_test(method, path, title):
         return ("not_found", stmt, "r.status_code in (404, 400)")
     if any(kw in t for kw in ["sql","sqli","注入","injection"]):
         stmt = f'c.request("{method}","{path}?q=%(27)or%(27)1%(27)=%(27)1".replace("%(27)","\'"))'
-        return ("sql_inject", stmt, "r.status_code in (400, 422, 404) or r.status_code < 500")
+        return ("sql_inject", stmt, "r.status_code < 500 and ('syntax' not in r.text.lower() or r.status_code >= 400)")
     if any(kw in t for kw in ["xss","脚本","script","cross"]):
         stmt = f'c.request("{method}","{path}?q=%3Cscript%3Ealert(1)%3C/script%3E")'
         if method in ("POST", "PUT", "PATCH"):
             stmt = f'c.{method.lower()}("{path}", json={{"q":"<script>alert(1)</script>"}})'
-        return ("xss", stmt, "r.status_code in (400, 422) or r.status_code < 500")
+        return ("xss", stmt, "r.status_code < 500 and 'script' not in r.text.lower()")
     if any(kw in t for kw in ["重复","dup","exist","冲突","已存在","already"]):
         stmt = f'c.{method.lower()}("{path}", json={{"name":"dup-test","email":"dup@test.com"}})' if method in ("POST","PUT","PATCH") else f'c.request("{method}","{path}")'
         return ("duplicate", stmt, "r.status_code in (400, 409)")
@@ -312,9 +306,12 @@ def gen_code(plan):
     url = re.sub(r'[^\w\-/:,.?&=+%~#]', '', raw_url)[:500]
     if not is_safe_url(url):
         url = "http://localhost"
-    # Auto-correct bare localhost URLs → http://127.0.0.1:8000
-    if url in ("http://localhost", "https://localhost", "http://127.0.0.1", "https://127.0.0.1"):
+    # Auto-correct localhost URLs → http://127.0.0.1:8000
+    if url in ("http://localhost", "https://localhost", "http://127.0.0.1", "https://127.0.0.1",
+               "http://localhost/", "http://127.0.0.1/"):
         url = "http://127.0.0.1:8000"
+    elif re.match(r'^https?://localhost:\d+', url):
+        url = url.replace('localhost', '127.0.0.1')
     apis = plan.get("apis", []); pages = plan.get("pages", [])
     rules = plan.get("rules", []); types = plan.get("types", ["api", "ui", "data"])
     out = os.path.join(GEN, safe(name) + "_" + datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6])
@@ -431,7 +428,7 @@ def gen_code(plan):
             if cn in seen:
                 cn = f"{n}_{ai}"
             seen.add(cn)
-            tp = p.replace("{id}", "1")
+            tp = re.sub(r'\{[^}]+\}', '1', p)
             lines.append(f"class Test_{cn}:")
             lines.append(f'    """{m} {p}"""')
             lines.append("")
@@ -879,6 +876,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     try: proc.terminate(); proc.kill()
                     except Exception: pass
                     RUN_PROCS.pop(pid, None)
+                    break
                 try:
                     line = await asyncio.to_thread(q.get, timeout=0.1)
                 except queue.Empty:

@@ -241,6 +241,8 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
 </div>
 
 <script>
+// ===== UTIL =====
+function he(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 // ===== DATA =====
 const TPLS = {
     task: {name:"Task Manager",url:"http://127.0.0.1:8000", apis:[
@@ -275,14 +277,14 @@ const TPLS = {
         {m:"GET",p:"https://www.baidu.com/img/bd_logo1.png",n:"Logo图片"},
         {m:"GET",p:"https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png",n:"静态资源"},
         {m:"GET",p:"https://www.baidu.com/search/error.html",n:"错误页面"},
-    ],
+        ],
         pgs:[
             {u:"/",na:"首页",ac:"搜索框可见+无JS报错"},
             {u:"/s?wd=hello",na:"英文搜索",ac:"结果列表加载"},
             {u:"/s?wd=测试",na:"中文搜索",ac:"Unicode关键词正常"},
             {u:"/s?wd=test&pn=10",na:"搜索结果第2页",ac:"翻页导航正常"},
         ],
-        pgs:[], rules:"posts返回100条\n每条含userId/id/title/body\nPOST返回201\nPUT返回200"},
+        rules:"搜索框可见\n无控制台报错\nLogo图片加载\n页面加载<5s\n搜索结果非空"},
 };
 
 function toggleAuth() {
@@ -359,8 +361,11 @@ function restore() {
     } catch(e) {}
 }
 function fixUrl(u) {
-    u = (u||'').trim();
-    if (!u || u === 'http://localhost' || u === 'http://127.0.0.1') return 'http://127.0.0.1:8000';
+    u = (u||'').trim().replace(/\/+$/g, '');
+    if (!u) return 'http://127.0.0.1:8000';
+    if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+    if (u === 'http://localhost' || u === 'http://127.0.0.1') return 'http://127.0.0.1:8000';
+    if (/^https?:\/\/localhost:\d+/.test(u)) return u.replace('localhost','127.0.0.1');
     return u;
 }
 
@@ -547,8 +552,8 @@ async function execHist() {
         try { const d = JSON.parse(e.data);
         if (d.t === "test") {
             document.getElementById("dash-log").textContent += d.line + "\n";
-            if (d.line.includes("PASSED")) { pp++; tt++; }
-            else if (d.line.includes("FAILED")) { ff++; tt++; }
+            if (d.line.includes("[PASS]")) { pp++; tt++; }
+            else if (d.line.includes("[FAIL]")) { ff++; tt++; }
             document.getElementById("m-total").textContent = tt;
             document.getElementById("m-passed").textContent = pp;
             document.getElementById("m-failed").textContent = ff;
@@ -615,7 +620,7 @@ function previewCases() {
         suggestions.forEach((s,i)=>{
             num++;
             const lk=window._lockedCases&&window._lockedCases.includes('s_'+i);
-            rows+=`<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${name}</td><td style="font-weight:600;padding:6px 4px">${s.title}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[s.priority]||'#888'};padding:6px 4px">${s.priority||'P1'}</td><td style="font-size:10px;padding:6px 4px">${s.precondition||'无'}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${s.method}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${s.path}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${s.expected}</td><td style="font-size:10px;padding:6px 4px;max-width:260px;white-space:normal;word-break:break-word">${s.steps||''}</td><td style="font-size:10px;color:#888;padding:6px 4px">${s.testdata||'无'}</td></tr>`;
+            rows+=`<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${he(name)}</td><td style="font-weight:600;padding:6px 4px">${he(s.title)}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:11px;font-weight:700;color:${priColor[s.priority]||'#888'};padding:6px 4px">${s.priority||'P1'}</td><td style="font-size:10px;padding:6px 4px">${he(s.precondition||'无')}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${he(s.method)}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${he(s.path)}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${he(s.expected)}</td><td style="font-size:10px;padding:6px 4px;max-width:260px;white-space:normal;word-break:break-word">${he(s.steps||'')}</td><td style="font-size:10px;color:#888;padding:6px 4px">${he(s.testdata||'无')}</td></tr>`;
         });
         document.getElementById('case-preview-list').innerHTML = rows;
         // Append UI + Data + Unit cases 

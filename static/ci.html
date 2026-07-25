@@ -253,6 +253,62 @@ async function startCI() {
                     if (d.pct) {
                         document.getElementById('progress-fill').style.width = d.pct+'%';
                         document.getElementById('progress-text').textContent = d.pct+'%';
+                    }
+                } else if (d.t==='done') {
+                    _evt.close(); _evt=null;
+                    setStep(3);
+                    document.getElementById('progress-fill').style.width = '100%';
+                    document.getElementById('progress-text').textContent = '100%';
+                    document.getElementById('ci-log').textContent += '\n══════════════════════════════\n';
+                    document.getElementById('ci-log').textContent += '  ✅ 执行完成\n';
+                    document.getElementById('ci-log').textContent += '  总计: '+d.total+' | 通过: '+d.passed+' | 失败: '+d.failed+' | 错误: '+(d.errors||0)+'\n';
+                    document.getElementById('ci-log').textContent += '  通过率: '+d.rate+'%\n';
+                    document.getElementById('ci-log').textContent += '══════════════════════════════\n';
+                    var ok = (d.failed||0)+(d.errors||0)===0;
+                    document.getElementById('ci-status').innerHTML = ok
+                        ? '<span class="status-pass">✅ 全部通过 ('+d.passed+'/'+d.total+', '+d.rate+'%)</span> <a href="/api/report" target="_blank" style="color:#5c6bc0;font-weight:600;margin-left:8px">→ 查看完整报告</a>'
+                        : '<span class="status-fail">❌ 有失败 ('+d.failed+'/'+d.total+')</span> <a href="/api/report" target="_blank" style="color:#5c6bc0;font-weight:600;margin-left:8px">→ 查看完整报告</a>';
+                    document.getElementById('btn-start').disabled = false;
+                    document.getElementById('btn-stop').classList.add('hidden');
+                    document.getElementById('help-msg').innerHTML = '<strong>✅ 第3步完成：</strong>测试已全部执行。点击「查看完整报告」查看详细结果，或查看下表的历史记录。';
+                } else if (d.t==='error') {
+                    document.getElementById('ci-log').textContent += '❌ '+d.msg+'\n';
+                    document.getElementById('ci-status').innerHTML = '<span class="status-fail">❌ 错误: '+d.msg+'</span>';
+                }
+            } catch(ex) {}
+        };
+        _evt.onerror = function() {
+            if(_evt){_evt.close();_evt=null;}
+            document.getElementById('btn-start').disabled = false;
+            document.getElementById('btn-stop').classList.add('hidden');
+            document.getElementById('ci-log').textContent += '\n⚠ 连接中断\n';
+        };
+    } catch(e) {
+        document.getElementById('ci-log').textContent += '❌ 网络错误: '+e.message+'\n';
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-stop').classList.add('hidden');
+    }
+}
+        };
+        _evt.onerror = function() {
+            if(_evt){_evt.close();_evt=null;}
+            document.getElementById('btn-start').disabled = false;
+            document.getElementById('btn-stop').classList.add('hidden');
+            document.getElementById('ci-log').textContent += '\n⚠ 连接中断\n';
+        };
+    } catch(e) {
+        document.getElementById('ci-log').textContent += '❌ 网络错误: '+e.message+'\n';
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-stop').classList.add('hidden');
+    }
+}
+function stopCI() {
+    fetch('/api/stop',{method:'POST'});
+    if(_evt){_evt.close();_evt=null;}
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-stop').classList.add('hidden');
+    document.getElementById('ci-status').innerHTML = '<span class="status-fail">⏹ 用户手动停止</span>';
+    document.getElementById('help-msg').innerHTML = '<strong>⏹ 已停止：</strong>可修改参数后重新执行。';
 }
 async function triggerGitHubCI() {
     var el = document.getElementById('github-ci-msg');
@@ -276,25 +332,8 @@ async function checkGitHubCI() {
         }).join('');
     } catch(e) { el.innerHTML = '<span style="color:#ef5350">'+e.message+'</span>'; }
 }
-                } else if (d.t==='done') {
-                    _evt.close(); _evt=null;
-                    setStep(3);
-                    document.getElementById('progress-fill').style.width = '100%';
-                    document.getElementById('progress-text').textContent = '100%';
-                    document.getElementById('ci-log').textContent += '\n══════════════════════════════\n';
-                    document.getElementById('ci-log').textContent += '  ✅ 执行完成\n';
-                    document.getElementById('ci-log').textContent += '  总计: '+d.total+' | 通过: '+d.passed+' | 失败: '+d.failed+' | 错误: '+(d.errors||0)+'\n';
-                    document.getElementById('ci-log').textContent += '  通过率: '+d.rate+'%\n';
-                    document.getElementById('ci-log').textContent += '══════════════════════════════\n';
-                    var ok = (d.failed||0)+(d.errors||0)===0;
-                    document.getElementById('ci-status').innerHTML = ok
-                        ? '<span class="status-pass">✅ 全部通过 ('+d.passed+'/'+d.total+', '+d.rate+'%)</span> <a href="/api/report" target="_blank" style="color:#5c6bc0;font-weight:600;margin-left:8px">→ 查看完整报告</a>'
-                        : '<span class="status-fail">❌ 有失败 ('+d.failed+'/'+d.total+')</span> <a href="/api/report" target="_blank" style="color:#5c6bc0;font-weight:600;margin-left:8px">→ 查看完整报告</a>';
-                    document.getElementById('btn-start').disabled = false;
-                    document.getElementById('btn-stop').classList.add('hidden');
-                    document.getElementById('help-msg').innerHTML = '<strong>✅ 第3步完成：</strong>测试已全部执行。点击「查看完整报告」查看详细结果，或查看下表的历史记录。';
+// Init
 loadHistory();
-// Load saved schedule
 var schedInterval = null;
 (function(){
     var s = JSON.parse(localStorage.getItem('ci_schedule')||'{}');
@@ -323,7 +362,6 @@ function updateSched() {
         var diff = nextRun - now;
         var h = Math.floor(diff/3600), m = Math.floor(diff%3600/60), s = diff%60;
         document.getElementById('sched-countdown').textContent = '下次执行: '+(time?'每天 ':'')+new Date(nextRun*1000).toLocaleTimeString()+' (还有 '+h+'时'+m+'分'+s+'秒)';
-        // Trigger when time arrives (within 30s window, not already run this cycle)
         if (diff <= 0 && now - lastRun > 60) {
             lastRun = now;
             document.getElementById('ci-url').value = document.getElementById('ci-url').value||'http://127.0.0.1:8000';
@@ -331,30 +369,7 @@ function updateSched() {
         }
     }
     tick();
-    schedInterval = setInterval(tick, 5000);  // Check every 5 seconds
-}
-                }
-            } catch(ex) {}
-        };
-        _evt.onerror = function() {
-            if(_evt){_evt.close();_evt=null;}
-            document.getElementById('btn-start').disabled = false;
-            document.getElementById('btn-stop').classList.add('hidden');
-            document.getElementById('ci-log').textContent += '\n⚠ 连接中断\n';
-        };
-    } catch(e) {
-        document.getElementById('ci-log').textContent += '❌ 网络错误: '+e.message+'\n';
-        document.getElementById('btn-start').disabled = false;
-        document.getElementById('btn-stop').classList.add('hidden');
-    }
-}
-function stopCI() {
-    fetch('/api/stop',{method:'POST'});
-    if(_evt){_evt.close();_evt=null;}
-    document.getElementById('btn-start').disabled = false;
-    document.getElementById('btn-stop').classList.add('hidden');
-    document.getElementById('ci-status').innerHTML = '<span class="status-fail">⏹ 用户手动停止</span>';
-    document.getElementById('help-msg').innerHTML = '<strong>⏹ 已停止：</strong>可修改参数后重新执行。';
+    schedInterval = setInterval(tick, 5000);
 }
 </script>
 </body>
