@@ -358,6 +358,11 @@ function restore() {
         if (d.auth) { document.getElementById("p-auth").value = d.auth; toggleAuth(); }
     } catch(e) {}
 }
+function fixUrl(u) {
+    u = (u||'').trim();
+    if (!u || u === 'http://localhost' || u === 'http://127.0.0.1') return 'http://127.0.0.1:8000';
+    return u;
+}
 
 // ===== GENERATE =====
 async function generate() {
@@ -365,8 +370,8 @@ async function generate() {
     const apis = []; document.querySelectorAll("#api-list tr").forEach(r => { const m = r.querySelector(".api-m").value, p = r.querySelector(".api-p").value.trim(), n = r.querySelector(".api-n").value.trim(); if (p) apis.push({m,p,n}); });
     const pgs = []; document.querySelectorAll("#pg-list tr").forEach(r => { const u = r.querySelector(".pg-u").value.trim(), na = r.querySelector(".pg-na").value.trim(); if (u) pgs.push({u,na}); });
     var rawUrl = document.getElementById("p-url").value.trim();
-    if (!rawUrl || rawUrl === "http://localhost" || rawUrl === "http://127.0.0.1") rawUrl = "http://127.0.0.1:8000";
-    const plan = {name: document.getElementById("p-name").value.trim()||"未命名", url: rawUrl, apis, pages: pgs, rules: document.getElementById("p-rules").value.split("\n").filter(l=>l.trim()), types: ["api","ui","data"], auth: document.getElementById("p-auth").value, authValue: document.getElementById("p-auth-value").value, time: new Date().toLocaleString()};
+    rawUrl = fixUrl(rawUrl);
+    const plan = {name: ...url: rawUrl, ...};
     let hist = []; try { hist = JSON.parse(localStorage.getItem("plan_hist")||"[]"); } catch(e) {}
     const safePlan = {name: plan.name, url: plan.url, apis: plan.apis, pages: plan.pgs||[], rules: plan.rules, types: plan.types, auth: plan.auth, time: plan.time};
     hist.unshift(safePlan); if (hist.length > 20) hist = hist.slice(0,20); try { localStorage.setItem("plan_hist", JSON.stringify(hist)); } catch(e) {}
@@ -509,7 +514,7 @@ async function execHist() {
     var rules = (document.getElementById("p-rules").value||'').split("\n").filter(l=>l.trim());
     var plan = {
         name: stored.name || (document.getElementById("p-name").value||'执行'),
-        url: stored.url || (document.getElementById("p-url").value||'http://localhost'),
+        url: stored.url || fixUrl(document.getElementById("p-url").value) || 'http://127.0.0.1:8000',
         apis: apis.length ? apis : (stored.apis || []),
         pages: pgs.length ? pgs : (stored.pages || []),
         rules: rules.length ? rules : (stored.rules || ''),
@@ -708,7 +713,7 @@ async function execPreviewed() {
     // Build plan from AI suggestions — each becomes 1 test via gen_code
     const plan = {
         name: window._previewName||'预览执行',
-        url: document.getElementById("p-url").value.trim() || 'http://localhost',
+        url: fixUrl(document.getElementById("p-url").value.trim()) || 'http://127.0.0.1:8000',
         apis: suggestions.map(s => ({m:s.method||'GET', p:s.path||'/', n:s.title||s.path})),
         pages: window._previewPgs||[],
         types: ['api','unit','data'],
