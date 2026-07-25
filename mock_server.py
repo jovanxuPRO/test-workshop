@@ -149,7 +149,13 @@ document.getElementById('live-stats').innerHTML='<div class="stat"><div class="n
 (d.tasks_by_status?Object.entries(d.tasks_by_status).map(function(e){var icon=e[0]==='done'?'done':e[0]==='todo'?'todo':'ip';return'<div class="stat"><div class="n"><span class="status-dot status-'+icon+'"></span>'+e[1]+'</div><div class="l">'+e[0]+'</div></div>'}).join(''):'');
 }
 fetch('/api/stats').then(r=>r.json()).then(loadStats);
-</script></body></html>"""
+</script>
+<footer style="text-align:center;padding:24px;color:#64748b;font-size:12px">
+<a href="/" style="color:#38bdf8">首页</a> &middot;
+<a href="/users-page" style="color:#38bdf8">用户管理</a> &middot;
+<a href="/tasks-page" style="color:#38bdf8">任务管理</a> &middot;
+<a href="/api/info" style="color:#38bdf8">API信息</a>
+</footer></body></html>"""
 
 @app.get("/api/info")
 def info(): return {"service":"Task Manager API","version":"1.0","endpoints":["/api/users","/api/tasks","/api/stats"]}
