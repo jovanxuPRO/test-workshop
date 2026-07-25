@@ -203,7 +203,7 @@ async function startCI() {
         document.getElementById('ci-log').textContent += '⚠ AI 调用失败，使用默认端点: '+e.message+'\n';
     }
 
-    var plan = {name: name, url: url, types: ["api","unit","data"], apis: apis,
+    var plan = {name: name, url: url, types: ["api","unit","data"], apis: apis, exact: true,
         pages: [{u:"/",na:"首页"}], rules: "所有API返回<500\n返回数据为有效JSON", auth: "none", authValue: ""};
 
     document.getElementById('ci-log').textContent += '⏳ 提交执行计划 ('+apis.length+' 个端点)...\n';
