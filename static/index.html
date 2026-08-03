@@ -130,14 +130,25 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
             <button class="btn btn-sm" onclick="document.getElementById('p-context').value='';_ctx={};renderContext()" style="font-size:12px;padding:6px 12px">清除</button>
             <span id="ctx-hint" style="font-size:11px;color:#888"></span>
         </div>
-        <div id="ctx-result" style="display:none;margin-top:12px;background:#f0f4ff;border-radius:8px;padding:12px;font-size:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <strong style="color:#5c6bc0">分析结果</strong>
-                <span id="ctx-source" style="font-size:10px;color:#888"></span>
+        <div id="ctx-result" style="display:none;margin-top:12px">
+            <div class="flex flex-b" style="margin-bottom:12px"><strong style="color:#5c6bc0;font-size:14px">📊 业务分析结果</strong>
+                <div class="flex gap4"><span id="ctx-source" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#e8eaf6;color:#5c6bc0"></span>
+                <button class="btn btn-sm btn-o" onclick="editContext()" style="font-size:11px">✏ 编辑</button></div>
             </div>
-            <div id="ctx-entities"></div>
-            <div id="ctx-rules"></div>
-            <div id="ctx-states"></div>
+            <!-- Entities -->
+            <div style="margin-bottom:12px"><strong style="font-size:12px;color:#333">🏷 实体</strong>
+                <div class="flex flex-w gap4" id="ctx-entities" style="margin-top:6px"></div>
+            </div>
+            <!-- Business Rules -->
+            <div style="margin-bottom:12px"><strong style="font-size:12px;color:#333">📋 业务规则</strong>
+                <div id="ctx-rules" style="margin-top:6px;font-size:12px;max-height:200px;overflow-y:auto"></div>
+            </div>
+            <!-- State Machine -->
+            <div><strong style="font-size:12px;color:#333">🔄 状态机</strong>
+                <div id="ctx-states" style="margin-top:6px;font-size:12px"></div>
+            </div>
+            <!-- Stats -->
+            <div id="ctx-stats" style="margin-top:12px;padding-top:12px;border-top:1px solid #e0e0e0;font-size:11px;color:#888"></div>
         </div>
     </div>
 
@@ -969,30 +980,66 @@ async function loadAllPRDs() {
 }
 function renderContext() {
     var d = document.getElementById('ctx-result');
-    if (!_ctx.entities && !_ctx.business_rules) { d.style.display = 'none'; return; }
+    if (!_ctx || (!_ctx.entities && !_ctx.business_rules)) { d.style.display = 'none'; return; }
     d.style.display = 'block';
-    document.getElementById('ctx-source').textContent = '来源: ' + (_ctx._source || '分析');
-    var html = '';
-    if (_ctx.entities && _ctx.entities.length) {
-        html += '<div style="margin-bottom:8px">📦 <b>实体:</b> ';
-        html += _ctx.entities.map(e => '<span style="background:#e8eaf6;padding:2px 8px;border-radius:4px;margin:2px;display:inline-block">' + he(e.name||e) + (e.fields ? ' (' + e.fields.join(',') + ')' : '') + '</span>').join(' ');
-        html += '</div>';
-    }
-    if (_ctx.business_rules && _ctx.business_rules.length) {
-        html += '<div style="margin-bottom:8px">📋 <b>业务规则:</b><br>';
-        html += _ctx.business_rules.map(r => '&nbsp;&nbsp;• ' + he(typeof r === 'string' ? r : r)).join('<br>');
-        html += '</div>';
-    }
-    if (_ctx.state_machine && _ctx.state_machine.length) {
-        html += '<div>🔄 <b>状态机:</b><br>';
-        _ctx.state_machine.forEach(sm => {
-            html += '&nbsp;&nbsp;' + he(sm.entity||'') + ': ' + (sm.states||[]).join(' → ') + '<br>';
-        });
-        html += '</div>';
-    }
-    document.getElementById('ctx-entities').innerHTML = html;
-    document.getElementById('ctx-rules').innerHTML = '';
-    document.getElementById('ctx-states').innerHTML = '';
+    document.getElementById('ctx-source').textContent = _ctx._source === 'ai' ? 'AI 分析' : '启发式分析';
+
+    // Entities
+    var ehtml = '';
+    (_ctx.entities||[]).forEach(function(e) {
+        var name = typeof e === 'string' ? e : (e.name || e);
+        var fields = (e.fields||[]).slice(0, 8);
+        var fstr = fields.length ? fields.join(' · ') : '';
+        ehtml += '<span style="background:#eef2ff;padding:4px 10px;border-radius:6px;font-size:11px;display:inline-flex;align-items:center;gap:4px;margin:2px" title="' + he(fstr) + '">' +
+            '<b>' + he(name) + '</b>' +
+            (fields.length ? ' <span style="color:#888;font-size:10px">[' + fields.length + '字段]</span>' : '') +
+            '</span>';
+    });
+    document.getElementById('ctx-entities').innerHTML = ehtml || '<span style="color:#888;font-size:11px">未识别到实体</span>';
+
+    // Rules
+    var rules = _ctx.business_rules||[];
+    var rhtml = '';
+    rules.slice(0, 20).forEach(function(r, i) {
+        var rt = typeof r === 'string' ? r : (r.text || r.rule || JSON.stringify(r));
+        rhtml += '<div style="padding:3px 0;border-bottom:1px solid #f0f0f0;display:flex;align-items:flex-start;gap:6px">' +
+            '<span style="background:#e8eaf6;color:#5c6bc0;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;flex-shrink:0;margin-top:1px">R' + (i+1) + '</span>' +
+            '<span>' + he(rt) + '</span></div>';
+    });
+    if (rules.length > 20) rhtml += '<div style="color:#888;font-size:11px;padding:4px 0">...还有 ' + (rules.length-20) + ' 条规则</div>';
+    document.getElementById('ctx-rules').innerHTML = rhtml || '<span style="color:#888;font-size:11px">未提取到业务规则</span>';
+
+    // State machines
+    var sm = _ctx.state_machine||[];
+    var sh = '';
+    sm.forEach(function(m) {
+        var entity = m.entity || '';
+        var states = (m.states||[]);
+        sh += '<div style="margin:6px 0"><b>' + he(entity||'状态机') + '</b>: ';
+        sh += states.map(function(s,si) {
+            return '<span style="background:#f0f4ff;padding:2px 8px;border-radius:10px;font-size:10px;display:inline-block;margin:1px">' + he(s) + '</span>' +
+                (si < states.length-1 ? '<span style="color:#5c6bc0;margin:0 2px">→</span>' : '');
+        }).join('');
+        sh += '</div>';
+    });
+    document.getElementById('ctx-states').innerHTML = sh || '<span style="color:#888;font-size:11px">未提取到状态机</span>';
+
+    // Stats
+    var sc = '已提取: ' + (_ctx.entities||[]).length + '个实体 · ' + rules.length + '条业务规则 · ' + (sm.length||0) + '个状态机';
+    if (rules.length >= 5) sc += ' | 预计可生成 ' + Math.min(rules.length*2, 60) + '+ 条分层测试';
+    document.getElementById('ctx-stats').textContent = sc;
+}
+
+function editContext() {
+    var j = JSON.stringify(_ctx, null, 2);
+    var w = window.open('', '_blank', 'width=700,height=600');
+    w.document.write('<html><head><title>编辑业务上下文</title><style>body{font-family:monospace;margin:20px}textarea{width:100%;height:450px;font-size:12px;padding:10px}button{padding:8px 20px;margin-top:8px;background:#5c6bc0;color:#fff;border:none;border-radius:6px;cursor:pointer}</style></head>' +
+        '<body><h3>编辑业务上下文（JSON）</h3><textarea id="e">' + he(j) + '</textarea><br>' +
+        '<button onclick="opener.updateContext(document.getElementById(\'e\').value);window.close()">保存并关闭</button></body></html>');
+}
+function updateContext(jstr) {
+    try { _ctx = JSON.parse(jstr); renderContext(); save(); document.getElementById('ctx-hint').textContent = '✅ 已手动编辑'; }
+    catch(e) { alert('JSON 格式错误'); }
 }
 async function analyzeContext() {
     var text = document.getElementById('p-context').value.trim();
