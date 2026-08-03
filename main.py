@@ -1548,6 +1548,7 @@ async def ai_suggest(request: Request):
         if not is_safe_url(base_url):
             return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI Base URL 被安全策略拒绝"}
         if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()):
+            logger.info(f"ai-suggest: AI key OK (len={len(_ai_key)}), calling model={model}")
             try:
                 results = await _call_llm(apis, seed, model, base_url, body.get("context"))
                 if results is not None and len(results) > 0:
@@ -1789,10 +1790,12 @@ async def _call_llm(apis, seed, model, base_url, context=None):
 4. ?= 标记的 query 参数请作为可选参数处理
 5. 不要问我任何问题，不要输出额外解释，只输出 JSON 行"""
     async with httpx.AsyncClient(timeout=60) as client:
+        logger.info(f"Calling AI: {base_url}/chat/completions model={model} key_len={len(_ai_key)} prompt_len={len(prompt)}")
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
-                  "temperature":0.8+random.random()*0.2,"max_tokens":8000})
+                  "temperature":0.8+random.random()*0.2,"max_tokens":3000})
+        logger.info(f"AI response: status={r.status_code} len={len(r.text)}")
         if r.status_code != 200:
             raise Exception(f"AI API {r.status_code}: {r.text[:200]}")
         text = r.json()["choices"][0]["message"]["content"].strip()
