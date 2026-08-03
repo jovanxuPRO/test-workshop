@@ -1789,12 +1789,12 @@ async def _call_llm(apis, seed, model, base_url, context=None):
 3. 每个 API 端点至少 4 条用例，必须覆盖: 正常(200)、缺少必填参数(400)、非法值(400)、不存在资源(404)、可选安全场景(P2)
 4. ?= 标记的 query 参数请作为可选参数处理
 5. 不要问我任何问题，不要输出额外解释，只输出 JSON 行"""
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=120) as client:
         logger.info(f"Calling AI: {base_url}/chat/completions model={model} key_len={len(_ai_key)} prompt_len={len(prompt)}")
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
-                  "temperature":0.8+random.random()*0.2,"max_tokens":3000})
+                  "temperature":0.8+random.random()*0.2,"max_tokens":4096})
         logger.info(f"AI response: status={r.status_code} len={len(r.text)}")
         if r.status_code != 200:
             raise Exception(f"AI API {r.status_code}: {r.text[:200]}")

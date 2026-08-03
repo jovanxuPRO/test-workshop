@@ -745,9 +745,9 @@ function previewCases() {
     // Timeout after 30s
     var _previewTimeout = setTimeout(function() {
         clearInterval(_progressTimer);
-        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="14" style="text-align:center;padding:24px;color:#ef5350;font-size:13px">⚠ AI 响应超时 (90s)<br><span style="font-size:11px;color:#888">请检查 AI 配置或稍后重试</span><br><button class="btn btn-sm" onclick="previewCases()" style="margin-top:8px">重试</button></td></tr>';
+        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="14" style="text-align:center;padding:24px;color:#ef5350;font-size:13px">⚠ AI 响应超时 (180s)<br><span style="font-size:11px;color:#888">请检查 AI 配置或稍后重试</span><br><button class="btn btn-sm" onclick="previewCases()" style="margin-top:8px">重试</button></td></tr>';
         document.getElementById('case-preview').classList.remove('hidden');
-    }, 90000);
+    }, 180000);
     const aiCfg = {model:'',base_url:''};
     try { const c=JSON.parse(localStorage.getItem('ai_profiles')||'[]');const a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{};aiCfg.model=a.model||'';aiCfg.base_url=a.base_url||''; } catch(e) {}
     fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url,context:_ctx})})
