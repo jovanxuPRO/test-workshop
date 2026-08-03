@@ -1547,7 +1547,7 @@ async def ai_suggest(request: Request):
         # Validate base_url to prevent key exfiltration
         if not is_safe_url(base_url):
             return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI Base URL 被安全策略拒绝"}
-        if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()[:20]):
+        if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()):
             try:
                 results = await _call_llm(apis, seed, model, base_url, body.get("context"))
                 if results is not None and len(results) > 0:
@@ -1581,7 +1581,7 @@ async def analyze_context(request: Request):
         if not is_safe_url(base_url):
             return {"ok": False, "error": "AI Base URL 安全策略拒绝"}
 
-        if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()[:20]):
+        if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()):
             try:
                 result = await _analyze_with_ai(text, model, base_url)
                 if result:
@@ -1788,7 +1788,7 @@ async def _call_llm(apis, seed, model, base_url, context=None):
 3. 每个 API 端点至少 4 条用例，必须覆盖: 正常(200)、缺少必填参数(400)、非法值(400)、不存在资源(404)、可选安全场景(P2)
 4. ?= 标记的 query 参数请作为可选参数处理
 5. 不要问我任何问题，不要输出额外解释，只输出 JSON 行"""
-    async with httpx.AsyncClient(timeout=20) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
