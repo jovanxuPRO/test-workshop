@@ -796,14 +796,12 @@ function previewCases() {
         if (d.source === "ai") {
             titleText += " · AI 生成";
             badge.style.display = "inline-block";
-            badge.textContent = "AI 生成";
+            badge.textContent = "AI 流式生成";
             badge.style.background = "#e8f5e9"; badge.style.color = "#27ae60";
         } else {
-            var reason = d.ai_error || "未知";
             badge.style.display = "inline-block";
-            badge.textContent = "未用AI: " + reason.substring(0, 50);
+            badge.textContent = "模板生成";
             badge.style.background = "#fff3e0"; badge.style.color = "#ff9800";
-            badge.title = reason;
             titleText += " · 模板";
         }
         document.getElementById("case-preview-title").textContent = titleText;
