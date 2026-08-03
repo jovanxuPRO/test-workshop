@@ -767,8 +767,9 @@ function previewCases() {
         document.getElementById('case-preview-list').innerHTML=rows;}
         else if(dd.t==='done'){d.source=dd.source||'ai';break;}}
         if(maxIter<=0) break;
-        window._previewSuggestions=suggestions;
-        return {suggestions:suggestions, source:d.source};
+    }
+    window._previewSuggestions=suggestions;
+    return {suggestions:suggestions, source:d.source};
     }).then(d=>{
         var num=(window._previewSuggestions||[]).length;
         // Append UI + Data + Unit cases 
