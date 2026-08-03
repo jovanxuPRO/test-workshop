@@ -1571,6 +1571,102 @@ async def ai_suggest(request: Request):
         return {"suggestions": [], "source": "error", "ai_error": str(e)[:200]}
 
 
+@app.post("/api/ai-suggest-stream")
+async def ai_suggest_stream(request: Request):
+    """AI-powered test case suggestion — SSE streaming, one case at a time."""
+    async def event_stream():
+        try:
+            body = await request.json()
+        except Exception:
+            yield f"data: {json.dumps({'t':'error','msg':'Invalid request'})}\n\n"
+            return
+        apis = body.get("apis", [])
+        seed = body.get("seed", 0)
+        model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
+        max_tokens = int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096"))
+        base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
+        if not is_safe_url(base_url):
+            yield f"data: {json.dumps({'t':'info','msg':'AI Base URL 被安全策略拒绝,使用模板'})}\n\n"
+            for s in _pattern_suggest(apis, seed):
+                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+            return
+        if not (_ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-"))):
+            yield f"data: {json.dumps({'t':'info','msg':'未配置AI Key,使用模板生成'})}\n\n"
+            for s in _pattern_suggest(apis, seed):
+                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+            return
+        yield f"data: {json.dumps({'t':'info','msg':'AI 正在生成用例...'})}\n\n"
+        import random, httpx
+        random.seed(seed)
+        api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
+        ctx_block = ""
+        ctx = body.get("context")
+        if ctx:
+            rules = ctx.get("business_rules", [])
+            if rules:
+                ctx_block = "\n业务规则（优先覆盖）:\n" + "\n".join(f"- {r if isinstance(r,str) else str(r)[:200]}" for r in rules[:10])
+        prompt = f"""你是 ISTQB 认证的测试工程师。为每个端点设计测试用例，覆盖正向、反向、边界、安全场景。
+API列表:
+{api_lines}
+{ctx_block}
+每条用例输出一行JSON（直接输出对象，不要外层数组，不要markdown）:
+{{"title":"查询用户列表-正常分页","priority":"P0","expected":"HTTP 200,返回数组","steps":"1.向/api/users?page=1发起GET 2.检查状态码200 3.验证JSON数组","method":"GET","path":"/api/users"}}
+每个端点至少3条。直接输出JSON行。"""
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                async with client.stream("POST", f"{base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {_ai_key}"},
+                    json={"model": model, "messages": [{"role": "user", "content": prompt}],
+                          "temperature": 0.8, "max_tokens": max_tokens, "stream": True}) as resp:
+                    if resp.status_code != 200:
+                        body_text = await resp.aread()
+                        yield f"data: {json.dumps({'t':'error','msg':f'AI API {resp.status_code}'})}\n\n"
+                        return
+                    buf = ""
+                    async for chunk in resp.aiter_text():
+                        for line in chunk.split("\n"):
+                            line = line.strip()
+                            if line.startswith("data: ") and line != "data: [DONE]":
+                                try:
+                                    data = json.loads(line[6:])
+                                    delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    buf += delta
+                                    # Try to parse complete JSON objects from buffer
+                                    while True:
+                                        obj_start = buf.find("{")
+                                        if obj_start < 0: break
+                                        depth = 0; end = -1
+                                        for i in range(obj_start, len(buf)):
+                                            if buf[i] == '{': depth += 1
+                                            elif buf[i] == '}':
+                                                depth -= 1
+                                                if depth == 0: end = i; break
+                                        if end < 0: break
+                                        try:
+                                            obj = json.loads(buf[obj_start:end+1])
+                                            if isinstance(obj, dict) and "title" in obj:
+                                                yield f"data: {json.dumps({'t':'case','case':obj,'source':'ai'})}\n\n"
+                                        except json.JSONDecodeError:
+                                            pass
+                                        buf = buf[end+1:]
+                                except Exception:
+                                    pass
+                    if buf.strip():
+                        yield f"data: {json.dumps({'t':'info','msg':'AI 生成完成'})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','source':'ai'})}\n\n"
+        except Exception as e:
+            en = type(e).__name__
+            logger.warning(f"AI stream failed: {en}")
+            yield f"data: {json.dumps({'t':'info','msg':f'AI超时,切换模板'})}\n\n"
+            for s in _pattern_suggest(apis, seed):
+                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+    return StreamingResponse(event_stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
+
+
 @app.post("/api/analyze-context")
 async def analyze_context(request: Request):
     """AI-powered business context analysis from PRD/docs. Extracts entities, relations, state machines, business rules."""
