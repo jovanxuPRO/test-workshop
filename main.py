@@ -1624,7 +1624,11 @@ API列表:
                           "temperature": 0.8, "max_tokens": max_tokens, "stream": True}) as resp:
                     if resp.status_code != 200:
                         body_text = await resp.aread()
-                        yield f"data: {json.dumps({'t':'error','msg':f'AI API {resp.status_code}'})}\n\n"
+                        logger.warning(f"AI API error {resp.status_code}")
+                        yield f"data: {json.dumps({'t':'info','msg':f'AI API {resp.status_code},切换模板'})}\n\n"
+                        for s in _pattern_suggest(apis, seed):
+                            yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+                        yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                         return
                     buf = ""
                     async for chunk in resp.aiter_text():
