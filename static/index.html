@@ -266,14 +266,32 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
 function he(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 // ===== DATA =====
 const TPLS = {
-    task: {name:"Task Manager",url:"http://127.0.0.1:8000", apis:[
-        {m:"GET",p:"/api/users",n:"用户列表"},{m:"POST",p:"/api/users",n:"创建用户"},{m:"GET",p:"/api/users/{id}",n:"用户详情"},
-        {m:"PUT",p:"/api/users/{id}",n:"更新用户"},{m:"DELETE",p:"/api/users/{id}",n:"删除用户"},
-        {m:"GET",p:"/api/tasks",n:"任务列表"},{m:"POST",p:"/api/tasks",n:"创建任务"},
-        {m:"PUT",p:"/api/tasks/{id}",n:"更新任务"},{m:"DELETE",p:"/api/tasks/{id}",n:"删除任务"},
-        {m:"GET",p:"/api/stats",n:"数据统计"}],
-        pgs:[{u:"/",na:"首页",ac:"仪表盘"},{u:"/users-page",na:"用户管理",ac:"增删改"},{u:"/tasks-page",na:"任务管理",ac:"增删改+过滤"}],
-        rules:"删除用户后关联任务负责人清空\n统计API数据与实际一致\n状态分布之和=总任务数\n重复用户名/邮箱应被拒绝\n完成率=done/total×100"},
+    task: {name:"E-Commerce 电商系统",url:"http://127.0.0.1:8000", apis:[
+        {m:"POST",p:"/api/auth/login",n:"用户登录"},
+        {m:"GET",p:"/api/auth/me",n:"当前用户信息"},
+        {m:"GET",p:"/api/products",n:"商品列表(分页)"},
+        {m:"POST",p:"/api/products",n:"创建商品"},
+        {m:"GET",p:"/api/products/{id}",n:"商品详情"},
+        {m:"PUT",p:"/api/products/{id}",n:"更新商品"},
+        {m:"DELETE",p:"/api/products/{id}",n:"删除商品"},
+        {m:"GET",p:"/api/orders",n:"订单列表(分页/筛选)"},
+        {m:"POST",p:"/api/orders",n:"创建订单(扣库存)"},
+        {m:"GET",p:"/api/orders/{id}",n:"订单详情"},
+        {m:"PUT",p:"/api/orders/{id}/status",n:"订单状态流转"},
+        {m:"DELETE",p:"/api/orders/{id}",n:"取消订单(退库存)"},
+        {m:"POST",p:"/api/refunds",n:"申请退款"},
+        {m:"GET",p:"/api/refunds",n:"退款列表"},
+        {m:"PUT",p:"/api/refunds/{id}/approve",n:"批准退款"},
+        {m:"PUT",p:"/api/refunds/{id}/reject",n:"驳回退款"},
+        {m:"GET",p:"/api/stats",n:"运营统计"}],
+        pgs:[{u:"/",na:"管理后台Dashboard"}],
+        rules:"商品价格必须>0\n库存不能为负数\n创建订单自动扣减库存\n取消/退款订单自动恢复库存\n订单状态流转:created→confirmed→paid→shipped→delivered\n只有created/confirmed状态才能取消\ndelivered后不可取消只能走退款\n退款金额不能超过订单总价\n普通用户只能看自己的订单\n管理员审批退款"},
+        context:{entities:[
+            {name:"商品",fields:["name","price","stock","category"]},
+            {name:"订单",fields:["user_id","items","total","status"]},
+            {name:"退款",fields:["order_id","reason","amount","status"]}],
+        business_rules:["商品价格必须>0","库存不能为负数","订单金额等于所有商品单价×数量之和","删除商品不影响已有订单","退款金额≤订单总价","只有已支付订单可退款"],
+        state_machine:[{entity:"订单",states:["created","confirmed","paid","shipped","delivered","cancelled"],transitions:["created→confirmed","confirmed→paid","paid→shipped","shipped→delivered","created→cancelled","confirmed→cancelled"]}]},
     demo:{name:"Demo API (企业)",url:"http://127.0.0.1:8000", apis:[
         {m:"GET",p:"/api/health",n:"健康检查"},{m:"POST",p:"/api/auth/login",n:"登录"},
         {m:"POST",p:"/api/auth/refresh",n:"刷新Token"},{m:"GET",p:"/api/users",n:"用户列表"},
@@ -338,6 +356,7 @@ function apply(k, el) {
     t.apis.forEach(a => { addApi(); const rows = document.querySelectorAll("#api-list tr"); const l = rows[rows.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
     document.getElementById("pg-list").innerHTML = "";
     t.pgs.forEach(p => { addPg(); const r = document.querySelectorAll("#pg-list tr"); const l = r[r.length-1]; l.querySelector(".pg-u").value = p.u; l.querySelector(".pg-na").value = p.na; if(p.br) l.querySelector(".pg-br").value = p.br; });
+    if (t.context) { _ctx = t.context; renderContext(); }
     save();
 }
 
