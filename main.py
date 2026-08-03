@@ -1501,6 +1501,32 @@ async def analyze_context(request: Request):
         return {"ok": False, "error": str(e)[:200]}
 
 
+@app.get("/api/prd-list")
+def list_prds():
+    """List available PRD files from mock_ecommerce/docs directory."""
+    prd_dir = os.path.join(BASE, "mock_ecommerce", "docs")
+    if not os.path.isdir(prd_dir):
+        return {"prds": []}
+    files = []
+    for f in sorted(os.listdir(prd_dir)):
+        if f.endswith(".md"):
+            files.append({"name": f.replace(".md", ""), "file": f})
+    return {"prds": files}
+
+
+@app.get("/api/prd-load")
+def load_prd(file: str = ""):
+    """Load content of a specific PRD file."""
+    if not file or ".." in file or "/" in file:
+        return {"ok": False, "error": "Invalid file name"}
+    prd_dir = os.path.join(BASE, "mock_ecommerce", "docs")
+    path = os.path.join(prd_dir, file)
+    if not os.path.isfile(path) or not file.endswith(".md"):
+        return {"ok": False, "error": "File not found"}
+    with open(path, encoding="utf-8") as f:
+        return {"ok": True, "content": f.read(), "file": file}
+
+
 async def _analyze_with_ai(text, model, base_url):
     import httpx, random
     prompt = f"""你是资深系统分析师。从以下业务文档中提取结构化信息，直接输出 JSON（不要 markdown）：

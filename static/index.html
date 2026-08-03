@@ -121,6 +121,10 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <label for="p-context">粘贴 PRD / API 文档 / OpenAPI / 需求描述</label>
         <textarea id="p-context" placeholder="例如：&#10;Task Manager 是一个任务管理 API。&#10;用户实体包含 username(唯一必填)、email(格式校验)、role(admin/user)。&#10;任务实体包含 title(必填)、status(todo/in_progress/done)、assignee(指向用户id)。&#10;删除用户时需检查无关联任务。订单金额必须 >= 0。&#10;创建任务时自动设置 created 为当前时间，status 默认为 todo。"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+            <select id="prd-select" onchange="loadPRDFile()" style="width:auto;padding:5px 10px;font-size:12px">
+                <option value="">📄 加载内置 PRD...</option>
+            </select>
+            <label class="add-btn" style="cursor:pointer;font-size:12px;padding:5px 10px;display:flex;align-items:center;gap:4px;background:#5c6bc0;color:#fff;border-radius:6px">📂 上传文件<input type="file" accept=".md,.txt,.json,.yaml" onchange="uploadPRD(this)" style="display:none"></label>
             <button class="btn btn-sm" id="btn-analyze" onclick="analyzeContext()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">AI 分析业务语义</button>
             <button class="btn btn-sm" onclick="document.getElementById('p-context').value='';_ctx={};renderContext()" style="font-size:12px;padding:6px 12px">清除</button>
             <span id="ctx-hint" style="font-size:11px;color:#888"></span>
@@ -899,6 +903,7 @@ function importSelectedTCs() {
 }
 // ===== INIT =====
 initTpls();
+initPRDList();
 try {
     var tplBtn = document.querySelector('[data-k="task"]');
     if (tplBtn) apply("task", tplBtn);
@@ -909,6 +914,35 @@ if (!document.querySelector("#pg-list tr")) addPg();
 
 // ===== BUSINESS CONTEXT =====
 var _ctx = {};
+async function initPRDList() {
+    try {
+        var r = await fetch('/api/prd-list');
+        var d = await r.json();
+        var sel = document.getElementById('prd-select');
+        (d.prds||[]).forEach(function(p) {
+            var opt = document.createElement('option');
+            opt.value = p.file; opt.textContent = p.name; sel.appendChild(opt);
+        });
+    } catch(e) {}
+}
+async function loadPRDFile() {
+    var f = document.getElementById('prd-select').value;
+    if (!f) return;
+    try {
+        var r = await fetch('/api/prd-load?file=' + encodeURIComponent(f));
+        var d = await r.json();
+        if (d.ok) { document.getElementById('p-context').value = d.content; document.getElementById('ctx-hint').textContent = '✅ 已加载: ' + f; }
+    } catch(e) { document.getElementById('ctx-hint').textContent = '⚠ 加载失败'; }
+}
+function uploadPRD(input) {
+    var file = input.files[0]; if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        document.getElementById('p-context').value = e.target.result;
+        document.getElementById('ctx-hint').textContent = '✅ 已加载: ' + file.name;
+    };
+    reader.readAsText(file);
+}
 function renderContext() {
     var d = document.getElementById('ctx-result');
     if (!_ctx.entities && !_ctx.business_rules) { d.style.display = 'none'; return; }
