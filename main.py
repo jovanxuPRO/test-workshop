@@ -390,13 +390,15 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
     # L6: Security injection enhancement
     for api in apis:
         p = api.get("p", ""); m = api.get("m", "GET")
-        extra.append({"m": m, "p": p, "n": f"安全-越权访问(空Authorization)",
+        path_id = p.replace("/","_").strip("_")[:30]
+        extra.append({"m": m, "p": p, "n": f"安全-越权访问({path_id})",
                       "layer": "L6",
                       "check": "r.status_code in (200, 401, 403)"})
     # L7: Boundary / concurrency
     for api in apis:
         p = api.get("p", ""); m = api.get("m", "GET")
-        extra.append({"m": m, "p": p, "n": f"边界-并发10请求",
+        path_id = p.replace("/","_").strip("_")[:30]
+        extra.append({"m": m, "p": p, "n": f"边界-并发10请求({path_id})",
                       "layer": "L7",
                       "check": "all(r.status_code < 500 for r in rs)"})
     return extra

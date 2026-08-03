@@ -61,7 +61,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         <div class="templates" id="tpls"></div>
         <div class="row">
             <div><label for="p-name">项目名称</label><input id="p-name" placeholder="被测项目名称"></div>
-            <div><label for="p-url">Base URL</label><input id="p-url" placeholder="https://example.com"></div>
+            <div><label for="p-url">Base URL</label><input id="p-url" placeholder="http://127.0.0.1:8000" oninput="validateURL()"><span id="url-hint" style="font-size:11px;margin-top:2px;display:block"></span></div>
         </div>
         <div class="row" style="margin-top:10px">
             <div><label for="p-auth">认证方式</label><select id="p-auth" onchange="toggleAuth()" style="width:100%">
@@ -421,7 +421,7 @@ function save() {
 function restore() {
     try {
         const d = JSON.parse(localStorage.getItem("wiz")); if (!d) return;
-        document.getElementById("p-name").value = d.name||""; document.getElementById("p-url").value = fixUrl(d.url||""); document.getElementById("p-rules").value = d.rules||"";
+        document.getElementById("p-name").value = d.name||""; document.getElementById("p-url").value = fixUrl(d.url||""); validateURL(); document.getElementById("p-rules").value = d.rules||"";
         if (d.apis && d.apis.length) {
             document.getElementById("api-list").innerHTML = "";
             d.apis.forEach(a => { addApi(); const rows = document.querySelectorAll("#api-list tr"); const l = rows[rows.length-1]; l.querySelector(".api-m").value = a.m; l.querySelector(".api-p").value = a.p; l.querySelector(".api-n").value = a.n; });
@@ -441,6 +441,16 @@ function fixUrl(u) {
     if (u === 'http://localhost' || u === 'http://127.0.0.1') return 'http://127.0.0.1:8000';
     if (/^https?:\/\/localhost:\d+/.test(u)) return u.replace('localhost','127.0.0.1');
     return u;
+}
+function validateURL() {
+    var u = document.getElementById('p-url').value.trim();
+    var h = document.getElementById('url-hint');
+    var input = document.getElementById('p-url');
+    if (!u) { h.textContent = ''; input.style.borderColor = ''; return; }
+    var fixed = fixUrl(u);
+    if (fixed !== u) { h.textContent = '→ ' + fixed; h.style.color = '#5c6bc0'; input.style.borderColor = '#5c6bc0'; }
+    else if (/^https?:\/\/.+/.test(u)) { h.textContent = '✅ 有效'; h.style.color = '#27ae60'; input.style.borderColor = '#27ae60'; }
+    else { h.textContent = '⚠ 格式无效'; h.style.color = '#ef5350'; input.style.borderColor = '#ef5350'; }
 }
 
 // ===== GENERATE =====
@@ -737,10 +747,17 @@ function previewCases() {
         if (pt && _dots === 0) pt.textContent = 'AI 正在生成测试用例...';
         else if (pt && _dots === 2) pt.textContent = 'AI 正在优化用例内容...';
     }, 600);
+    // Timeout after 30s
+    var _previewTimeout = setTimeout(function() {
+        clearInterval(_progressTimer);
+        document.getElementById('case-preview-list').innerHTML = '<tr><td colspan="14" style="text-align:center;padding:24px;color:#ef5350;font-size:13px">⚠ AI 响应超时 (30s)<br><span style="font-size:11px;color:#888">请检查 AI 配置或稍后重试</span><br><button class="btn btn-sm" onclick="previewCases()" style="margin-top:8px">重试</button></td></tr>';
+        document.getElementById('case-preview').classList.remove('hidden');
+    }, 30000);
     const aiCfg = {model:'',base_url:''};
     try { const c=JSON.parse(localStorage.getItem('ai_profiles')||'[]');const a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{};aiCfg.model=a.model||'';aiCfg.base_url=a.base_url||''; } catch(e) {}
     fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url,context:_ctx})})
     .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
+        clearTimeout(_previewTimeout);
         clearInterval(_progressTimer);
         const suggestions = d.suggestions||[];
         window._previewSuggestions = suggestions;
@@ -787,6 +804,7 @@ function previewCases() {
         }
         document.getElementById("case-preview-title").textContent = titleText;
     }).catch(e=>{
+        clearTimeout(_previewTimeout);
         clearInterval(_progressTimer);
         // Even on AI failure, show UI + Unit + Data rows
         let num = 0, rows = '';
