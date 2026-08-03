@@ -1597,9 +1597,9 @@ async def ai_suggest_stream(request: Request):
 API列表:
 {api_lines}
 {ctx_block}
-每条用例输出一行JSON（直接输出对象，不要外层数组，不要markdown）:
-{{"title":"查询用户列表-正常分页","priority":"P0","expected":"HTTP 200,返回数组","steps":"1.向/api/users?page=1发起GET 2.检查状态码200 3.验证JSON数组","method":"GET","path":"/api/users"}}
-每个端点至少3条。直接输出JSON行。"""
+每条用例输出一行精简JSON（直接输出对象，不要外层数组，不要markdown）:
+{{"title":"查询用户列表-正常分页","priority":"P0","expected":"200,数组","steps":"1.GET 2.检查200 3.验证数组","method":"GET","path":"/api/users"}}
+每个端点至少3条。steps字段尽量简短。直接输出JSON行。"""
 
     async def event_stream():
         import random, httpx
