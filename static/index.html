@@ -750,19 +750,26 @@ function previewCases() {
     }, 180000);
     const aiCfg = {model:'',base_url:''};
     try { const c=JSON.parse(localStorage.getItem('ai_profiles')||'[]');const a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{};aiCfg.model=a.model||'';aiCfg.base_url=a.base_url||'';aiCfg.max_tokens=a.max_tokens||0; } catch(e) {}
-    fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url,max_tokens:aiCfg.max_tokens,context:_ctx})})
-    .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
-        clearTimeout(_previewTimeout);
-        clearInterval(_progressTimer);
-        const suggestions = d.suggestions||[];
-        window._previewSuggestions = suggestions;
-        let rows='',num=0;const priColor={P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0'};
-        suggestions.forEach((s,i)=>{
-            num++;
-            const lk=window._lockedCases&&window._lockedCases.includes('s_'+i);
-            rows+=`<tr style="border-bottom:1px solid #eee;${lk?'background:#fffde7':''}"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="${i}" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock${lk?' locked':''}" data-key="s_${i}" onclick="toggleLock(this,'s_${i}')">${lk?'🔒':'🔓'}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-${String(num).padStart(3,'0')}</td><td style="padding:6px 4px;font-size:11px">${he(name)}</td><td style="font-weight:600;padding:6px 4px">${he(s.title)}</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:10px;font-weight:700;color:#5c6bc0;padding:6px 4px">${s.layer||''}</td><td style="font-size:11px;font-weight:700;color:${priColor[s.priority]||'#888'};padding:6px 4px">${s.priority||'P1'}</td><td style="font-size:10px;padding:6px 4px">${he(s.precondition||'无')}</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">${he(s.method)}</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">${he(s.path)}</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">${he(s.expected)}</td><td style="font-size:10px;padding:6px 4px;max-width:260px;white-space:normal;word-break:break-word">${he(s.steps||'')}</td><td style="font-size:10px;color:#888;padding:6px 4px">${he(s.testdata||'无')}</td></tr>`;
-        });
-        document.getElementById('case-preview-list').innerHTML = rows;
+    fetch('/api/ai-suggest-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url,max_tokens:aiCfg.max_tokens,context:_ctx})})
+    .then(async r=>{
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        clearTimeout(_previewTimeout); clearInterval(_progressTimer);
+        var suggestions=[],num=0,rows='',priColor={P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0'},d={source:'ai'};
+        var reader=r.body.getReader(),dec=new TextDecoder(),buf='';
+        while(true){var {done,value}=await reader.read();if(done)break;
+        buf+=dec.decode(value,{stream:true});var lines=buf.split('\n');buf=lines.pop();
+        for(var li=0;li<lines.length;li++){var line=lines[li].trim();if(!line.startsWith('data: '))continue;
+        try{var dd=JSON.parse(line.slice(6));}catch(e){continue;}
+        if(dd.t==='info'){var pt=document.getElementById('ai-progress-text');if(pt)pt.textContent=dd.msg;}
+        else if(dd.t==='case'){var s=dd.case;suggestions.push(s);num++;
+        var lk=window._lockedCases&&window._lockedCases.includes('s_'+(num-1));
+        rows+='<tr style="border-bottom:1px solid #eee;'+(lk?'background:#fffde7':'')+'"><td style="padding:6px 4px"><input type="checkbox" class="pv-check" value="'+(num-1)+'" checked></td><td style="padding:4px;text-align:center;cursor:pointer;font-size:14px" class="pv-lock'+(lk?' locked':'')+'" data-key="s_'+(num-1)+'" onclick="toggleLock(this,\'s_'+(num-1)+'\')">'+(lk?'🔒':'🔓')+'</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">TC-'+String(num).padStart(3,'0')+'</td><td style="padding:6px 4px;font-size:11px">'+he(name)+'</td><td style="font-weight:600;padding:6px 4px">'+he(s.title)+'</td><td style="font-size:10px;font-weight:600;color:#5c6bc0;padding:6px 4px">API</td><td style="font-size:10px;font-weight:700;color:#5c6bc0;padding:6px 4px">'+(s.layer||'')+'</td><td style="font-size:11px;font-weight:700;color:'+(priColor[s.priority]||'#888')+';padding:6px 4px">'+(s.priority||'P1')+'</td><td style="font-size:10px;padding:6px 4px">'+he(s.precondition||'无')+'</td><td style="font-family:monospace;font-size:10px;color:#5c6bc0;padding:6px 4px">'+he(s.method)+'</td><td style="font-family:monospace;font-size:10px;padding:6px 4px">'+he(s.path)+'</td><td style="font-size:10px;color:#27ae60;padding:6px 4px">'+he(s.expected)+'</td><td style="font-size:10px;padding:6px 4px;max-width:260px;white-space:normal;word-break:break-word">'+he(s.steps||'')+'</td><td style="font-size:10px;color:#888;padding:6px 4px">'+he(s.testdata||'无')+'</td></tr>';
+        document.getElementById('case-preview-list').innerHTML=rows;}
+        else if(dd.t==='done'){d.source=dd.source||'ai';}}
+        window._previewSuggestions=suggestions;
+        return {suggestions,d};
+    }).then(d=>{
+        var num = (window._previewSuggestions||[]).length;
         // Append UI + Data + Unit cases 
         var extraRows = '';
         if (pgs.length) extraRows += '<tr style="background:#e8f5e9"><td colspan="14" style="padding:4px 12px;font-size:11px;font-weight:700;color:#27ae60">📱 Web 页面测试 (' + (pgs.length*6) + ' 条)</td></tr>';
