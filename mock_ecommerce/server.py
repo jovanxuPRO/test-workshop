@@ -27,19 +27,10 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/")
-def index(): return FileResponse(os.path.join(static_dir, "dashboard.html"))
-
-@app.get("/login")
-def login_page(): return FileResponse(os.path.join(static_dir, "login.html"))
-
 @app.get("/products")
-def products_page(): return FileResponse(os.path.join(static_dir, "products.html"))
-
 @app.get("/orders")
-def orders_page(): return FileResponse(os.path.join(static_dir, "orders.html"))
-
 @app.get("/refunds")
-def refunds_page(): return FileResponse(os.path.join(static_dir, "refunds.html"))
+def spa(): return FileResponse(os.path.join(static_dir, "index.html"))
 
 @app.get("/api/info")
 def info():
