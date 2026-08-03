@@ -119,7 +119,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
     <div class="card">
         <h2>5. 业务上下文（可选，大幅提升测试精准度）</h2>
         <label for="p-context">粘贴 PRD / API 文档 / OpenAPI / 需求描述</label>
-        <textarea id="p-context" placeholder="例如：&#10;Task Manager 是一个任务管理 API。&#10;用户实体包含 username(唯一必填)、email(格式校验)、role(admin/user)。&#10;任务实体包含 title(必填)、status(todo/in_progress/done)、assignee(指向用户id)。&#10;删除用户时需检查无关联任务。订单金额必须 >= 0。&#10;创建任务时自动设置 created 为当前时间，status 默认为 todo。"></textarea>
+        <textarea id="p-context" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" style="min-height:80px;max-height:300px;resize:vertical" placeholder="点击下方 📚 全部加载 导入PRD，或直接粘贴文档..."></textarea>
         <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
             <select id="prd-select" onchange="loadPRDFile()" style="width:auto;padding:5px 10px;font-size:12px">
                 <option value="">📄 加载内置 PRD...</option>
@@ -129,6 +129,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
             <button class="btn btn-sm" id="btn-analyze" onclick="analyzeContext()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">AI 分析业务语义</button>
             <button class="btn btn-sm" onclick="document.getElementById('p-context').value='';_ctx={};renderContext()" style="font-size:12px;padding:6px 12px">清除</button>
             <span id="ctx-hint" style="font-size:11px;color:#888"></span>
+            <span id="ctx-spinner" style="display:none;font-size:11px;color:#5c6bc0">⏳ 分析中...</span>
         </div>
         <div id="ctx-result" style="display:none;margin-top:12px">
             <div class="flex flex-b" style="margin-bottom:12px"><strong style="color:#5c6bc0;font-size:14px">📊 业务分析结果</strong>
@@ -674,7 +675,7 @@ function previewCases() {
     }, 600);
     const aiCfg = {model:'',base_url:''};
     try { const c=JSON.parse(localStorage.getItem('ai_profiles')||'[]');const a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{};aiCfg.model=a.model||'';aiCfg.base_url=a.base_url||''; } catch(e) {}
-    fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url})})
+    fetch('/api/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url,context:_ctx})})
     .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
         clearInterval(_progressTimer);
         const suggestions = d.suggestions||[];
@@ -940,6 +941,9 @@ async function initPRDList() {
 async function loadPRDFile() {
     var f = document.getElementById('prd-select').value;
     if (!f) return;
+    await _loadSinglePRD(f);
+}
+async function _loadSinglePRD(f) {
     try {
         var r = await fetch('/api/prd-load?file=' + encodeURIComponent(f));
         var d = await r.json();
@@ -968,6 +972,7 @@ async function loadAllPRDs() {
         var r = await fetch('/api/prd-list');
         var d = await r.json();
         if (!d.prds || !d.prds.length) { document.getElementById('ctx-hint').textContent = '⚠ 无可用PRD'; return; }
+        document.getElementById('ctx-hint').textContent = '⏳ 加载中...';
         var parts = [];
         for (var i = 0; i < d.prds.length; i++) {
             var rr = await fetch('/api/prd-load?file=' + encodeURIComponent(d.prds[i].file));
@@ -975,7 +980,9 @@ async function loadAllPRDs() {
             if (dd.ok) parts.push('\n\n--- ' + d.prds[i].name + ' ---\n\n' + dd.content);
         }
         document.getElementById('p-context').value = parts.join('');
-        document.getElementById('ctx-hint').textContent = '✅ 已加载全部 ' + d.prds.length + ' 份 PRD';
+        // Auto-analyze after loading
+        document.getElementById('ctx-hint').textContent = '';
+        analyzeContext();
     } catch(e) { document.getElementById('ctx-hint').textContent = '⚠ 加载失败'; }
 }
 function renderContext() {
@@ -1043,26 +1050,40 @@ function updateContext(jstr) {
 }
 async function analyzeContext() {
     var text = document.getElementById('p-context').value.trim();
-    if (!text) { alert('请先输入业务文档内容'); return; }
+    if (!text) { alert('请先输入或加载业务文档内容'); return; }
     var btn = document.getElementById('btn-analyze');
-    btn.textContent = '分析中...'; btn.disabled = true;
+    var spinner = document.getElementById('ctx-spinner');
+    btn.textContent = '分析中...'; btn.disabled = true; spinner.style.display = 'inline';
+    document.getElementById('ctx-hint').textContent = '';
+    var prev = _ctx; // preserve existing good context
     try {
         var aiCfg = {};
         try { var c=JSON.parse(localStorage.getItem('ai_profiles')||'[]'); var a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{}; aiCfg.model=a.model||''; aiCfg.base_url=a.base_url||''; } catch(e) {}
         var r = await fetch('/api/analyze-context', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:text, model:aiCfg.model, base_url:aiCfg.base_url})});
         var d = await r.json();
         if (d.ok && d.context) {
-            _ctx = d.context; _ctx._source = d.source;
+            var nc = d.context;
+            // Merge: keep pre-existing context if new one is sparse
+            if (prev && prev.entities && prev.entities.length > 0) {
+                if (!nc.entities || nc.entities.length < prev.entities.length) nc.entities = prev.entities;
+                if (!nc.state_machine || !nc.state_machine.length) nc.state_machine = prev.state_machine||[];
+                if (nc.business_rules && prev.business_rules) {
+                    var sr = new Set((prev.business_rules||[]).map(function(x){return typeof x==='string'?x:x.text||''}));
+                    (nc.business_rules||[]).forEach(function(x){var s=typeof x==='string'?x:x.text||'';if(!sr.has(s))sr.add(s)});
+                    nc.business_rules = Array.from(sr).map(function(x){return x});
+                }
+            }
+            _ctx = nc; _ctx._source = d.source;
             renderContext();
-            document.getElementById('ctx-hint').textContent = '✅ 已分析 (' + d.source + ')';
+            document.getElementById('ctx-hint').textContent = (d.source==='ai'?'🤖 AI':'🧠 启发式') + ' 分析完成';
             save();
         } else {
-            document.getElementById('ctx-hint').textContent = '⚠ ' + (d.error || '分析失败');
+            document.getElementById('ctx-hint').textContent = '⚠ ' + (d.error || '分析失败，请检查文档内容');
         }
     } catch(e) {
         document.getElementById('ctx-hint').textContent = '⚠ 网络错误: ' + e.message;
     }
-    btn.textContent = 'AI 分析业务语义'; btn.disabled = false;
+    btn.textContent = 'AI 分析业务语义'; btn.disabled = false; spinner.style.display = 'none';
 }
 // ===== AI CONFIG (multi-profile) =====
 let _aiProfiles = [], _aiActiveId = '', _aiEditingId = '';

@@ -1457,7 +1457,7 @@ async def ai_suggest(request: Request):
             return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI Base URL 被安全策略拒绝"}
         if _ai_key and len(_ai_key) >= 20:
             try:
-                results = await _call_llm(apis, seed, model, base_url)
+                results = await _call_llm(apis, seed, model, base_url, body.get("context"))
                 if results is not None and len(results) > 0:
                     return {"suggestions": results, "source": "ai"}
                 elif results is not None:
@@ -1650,11 +1650,35 @@ def _analyze_with_heuristic(text):
     }
 
 
-async def _call_llm(apis, seed, model, base_url):
+async def _call_llm(apis, seed, model, base_url, context=None):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""你是 ISTQB 认证的测试工程师。请根据以下 API 信息，为每个端点设计 4-8 条测试用例，覆盖正向、反向、边界、安全四大范畴。
+    ctx_block = ""
+    if context:
+        ctx_block = "\n=== 业务上下文（优先使用！） ===\n"
+        entities = context.get("entities", [])
+        if entities:
+            ctx_block += "实体:\n"
+            for e in entities[:10]:
+                name = e.get("name", "") if isinstance(e, dict) else str(e)
+                fields = e.get("fields", []) if isinstance(e, dict) else []
+                ctx_block += f"- {name}" + (f" (字段: {', '.join(fields[:8])})" if fields else "") + "\n"
+        rules = context.get("business_rules", [])
+        if rules:
+            ctx_block += "\n业务规则（每条都必须生成对应的正向/反向测试用例）:\n"
+            for i, r in enumerate(rules[:12]):
+                rt = r if isinstance(r, str) else (r.get("text","") if isinstance(r, dict) else str(r))
+                if rt: ctx_block += f"- R{i+1}: {rt[:200]}\n"
+        sm = context.get("state_machine", [])
+        if sm:
+            ctx_block += "\n状态机（必须为每个状态生成对应的测试用例）:\n"
+            for m in sm:
+                entity = m.get("entity", "") if isinstance(m, dict) else ""
+                states = m.get("states", []) if isinstance(m, dict) else []
+                if states: ctx_block += f"- {entity}: {' → '.join(states)}\n"
+    prompt = f"""你是 ISTQB 认证的测试工程师。请根据以下 API 信息{'和业务上下文' if ctx_block else ''}，为每个端点设计 4-8 条测试用例，覆盖正向、反向、边界、安全四大范畴。
+{ctx_block}
 
 === 测试目标 API ===
 {api_lines}
