@@ -572,7 +572,14 @@ function loadHist() {
     fetch('/api/history-data').then(r=>r.json()).then(d=>{
         const logs = d.history||[];
         const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        document.getElementById("exec-log-list").innerHTML = '<h3 style="margin-bottom:10px">执行历史 ('+logs.length+')</h3>' + (logs.length ? logs.map((l,i)=>`<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid #e8ecf1;border-radius:7px;margin-bottom:6px;font-size:12px">
+        var trend = d.trend||[], streak = d.streak||0;
+        var th = '<div style="margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap">';
+        if (d.ready) th += '<span style="background:#D1FAE5;color:#065F46;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600">✅ 连续'+streak+'次全通过 — 可上线</span>';
+        else if (streak >= 1) th += '<span style="background:#FEF3C7;color:#92400E;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600">⚠ 连续'+streak+'次通过，需 '+ (3-streak) +' 次确认</span>';
+        else th += '<span style="background:#FEE2E2;color:#991B1B;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600">❌ 最近有失败</span>';
+        if (trend.length >= 2) { var last = trend[trend.length-1], prev = trend[trend.length-2]; var dir = last.rate > prev.rate ? '↑' : last.rate < prev.rate ? '↓' : '→'; th += '<span style="font-size:11px;color:#888">趋势: '+dir+' ' + prev.rate + '% → ' + last.rate + '%</span>'; }
+        th += '</div>';
+        document.getElementById("exec-log-list").innerHTML = '<h3 style="margin-bottom:10px">执行历史 ('+logs.length+')</h3>' + th + (logs.length ? logs.map((l,i)=>`<div class="hist-item" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid #e8ecf1;border-radius:7px;margin-bottom:6px;font-size:12px">
             <div><strong>${esc(l.name)}</strong> <span style="color:#888;font-size:11px">${esc(l.time||'')}</span></div>
             <div style="display:flex;gap:8px;align-items:center">
                 <span style="color:${(l.failed||0)>0?'#ef5350':'#27ae60'};font-weight:700">${l.passed||0}/${l.total||0} ${l.rate||0}%</span>

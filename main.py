@@ -770,7 +770,19 @@ def save_hist_entry(entry):
 def list_history_json():
     """Return execution history as JSON for the Exec tab."""
     entries = load_hist()
-    return {"history": entries}
+    # Trend: last 10 runs pass/fail rate and direction
+    trend = []
+    for e in entries[:10]:
+        trend.append({"time": e.get("time",""), "total": e.get("total",0),
+                      "passed": e.get("passed",0), "failed": e.get("failed",0),
+                      "rate": e.get("rate",0)})
+    # Consecutive pass count (release readiness)
+    streak = 0
+    for e in entries:
+        if e.get("failed", 0) == 0: streak += 1
+        else: break
+    return {"history": entries, "trend": list(reversed(trend)), "streak": streak,
+            "ready": streak >= 3}
 
 
 @app.get("/api/history")
