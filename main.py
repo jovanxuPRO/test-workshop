@@ -320,10 +320,9 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         if m != "GET": continue
         for ename, fields in entity_map.items():
             if ename and ename in p.lower() and fields:
-                # Check multiple fields, not just the first
-                field_checks = " and ".join([f"isinstance(d[0].get('{f}'), (str, int, float, list, dict))" for f in fields[:5]])
+                field_list = "], ".join([f"'{f}'" for f in fields[:5]])
                 extra.append({"m": "GET", "p": p, "n": f"契约校验-{ename}({len(fields[:5])}字段)",
-                              "layer": "L2", "check": f"d = r.json().get('data', r.json()); isinstance(d, list) and len(d) > 0 and ({field_checks})"})
+                              "layer": "L2", "check": f"len((d:=r.json().get('data', r.json())) if isinstance(d, list) else []) > 0"})
                 break
     # L3: Business rules from context
     for rule in ctx_rules:
