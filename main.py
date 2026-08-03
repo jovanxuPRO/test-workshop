@@ -418,6 +418,7 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
     # Store ctx for use in test generators
     ctx_entities = ctx.get("entities", [])
     ctx_rules = ctx.get("business_rules", [])
+    ctx_state_machine = ctx.get("state_machine", [])
     out = os.path.join(GEN, safe(name) + "_" + datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6])
     # Cleanup: keep only last 20 test dirs by modification time
     try:
