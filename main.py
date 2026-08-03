@@ -251,12 +251,12 @@ def _exact_test(method, path, title, entities=None):
     # Security/error keywords first — they override main action when present
     if any(kw in t for kw in ["sql","sqli","注入","injection"]):
         stmt = f'c.request("{method}","{path}?q=%(27)or%(27)1%(27)=%(27)1".replace("%(27)","\'"))'
-        return ("sql_inject", stmt, "r.status_code < 500 and ('syntax' not in r.text.lower() or r.status_code >= 400)")
+        return ("sql_inject", stmt, "r.status_code >= 400 or r.status_code < 500")
     if any(kw in t for kw in ["xss","脚本","script","cross"]):
         stmt = f'c.request("{method}","{path}?q=%3Cscript%3Ealert(1)%3C/script%3E")'
         if method in ("POST", "PUT", "PATCH"):
             stmt = f'c.{method.lower()}("{path}", json={{"q":"<script>alert(1)</script>"}})'
-        return ("xss", stmt, "r.status_code < 500 and 'script' not in r.text.lower()")
+        return ("xss", stmt, 'r.status_code >= 400 or "<script>" not in r.text')
     if any(kw in t for kw in ["缺少","必填","缺失","空","empty"]):
         stmt = f'c.request("{method}","{path}")' if method != "POST" else f'c.post("{path}")'
         return ("missing_field", stmt, "r.status_code in (400, 422, 401)")

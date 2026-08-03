@@ -189,7 +189,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
         </table></div>
     </div>
 
-    <button class="btn btn-go" onclick="generate()" style="margin-top:8px">直接执行全部</button>
+    <button class="btn btn-go" onclick="_runWithConfirm()" style="margin-top:8px">直接执行全部</button>
     <div id="results" class="hidden" style="margin-top:16px" aria-live="polite" aria-atomic="true"></div>
 </div>
 
@@ -428,6 +428,16 @@ function fixUrl(u) {
 }
 
 // ===== GENERATE =====
+function _runWithConfirm() {
+    var url = fixUrl(document.getElementById("p-url").value.trim());
+    var apis = document.querySelectorAll("#api-list tr").length - (document.querySelector("#api-list tr") ? 0 : 0);
+    var count = 0; document.querySelectorAll("#api-list tr").forEach(function(){count++});
+    var isProd = url && !url.includes('127.0.0.1') && !url.includes('localhost');
+    var msg = '即将对 ' + url + ' 执行 ' + count + ' 个 API 端点的自动化测试。';
+    if (isProd) msg += '\n\n⚠ 目标不是本地地址，可能影响线上服务。确定继续？';
+    if (!confirm(msg)) return;
+    generate();
+}
 async function generate() {
     if (window._generating) return;
     window._generating = true;
