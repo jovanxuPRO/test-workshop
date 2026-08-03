@@ -1543,6 +1543,7 @@ async def ai_suggest(request: Request):
         apis = body.get("apis", [])
         seed = body.get("seed", 0)
         model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
+        max_tokens = int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096"))
         base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         # Validate base_url to prevent key exfiltration
         if not is_safe_url(base_url):
@@ -1550,7 +1551,7 @@ async def ai_suggest(request: Request):
         if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()):
             logger.info(f"ai-suggest: AI key OK (len={len(_ai_key)}), calling model={model}")
             try:
-                results = await _call_llm(apis, seed, model, base_url, body.get("context"))
+                results = await _call_llm(apis, seed, model, base_url, body.get("context"), max_tokens)
                 if results is not None and len(results) > 0:
                     return {"suggestions": results, "source": "ai"}
                 elif results is not None:
@@ -1747,7 +1748,7 @@ def _analyze_with_heuristic(text):
     }
 
 
-async def _call_llm(apis, seed, model, base_url, context=None):
+async def _call_llm(apis, seed, model, base_url, context=None, max_tokens=4096):
     import httpx, random
     random.seed(seed)
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
@@ -1796,7 +1797,7 @@ async def _call_llm(apis, seed, model, base_url, context=None):
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
-                  "temperature":0.8+random.random()*0.2,"max_tokens":4096})
+                  "temperature":0.8+random.random()*0.2,"max_tokens":max_tokens})
         logger.info(f"AI response: status={r.status_code} len={len(r.text)}")
         if r.status_code != 200:
             raise Exception(f"AI API {r.status_code}: {r.text[:200]}")
