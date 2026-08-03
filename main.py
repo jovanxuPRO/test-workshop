@@ -1560,6 +1560,8 @@ async def ai_suggest(request: Request):
                 logger.warning(f"AI call failed: {en}")
                 friendly = "AI 连接超时，已使用模板生成" if "Timeout" in en or "Connect" in en else f"AI 调用失败({en})，已使用模板"
                 return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": friendly}
+        else:
+            logger.info(f"ai-suggest: skipping AI — key_len={len(_ai_key)} starts_with_sk={'sk-' in (_ai_key or '')[:3]}")
         msg = "API Key 未配置" if not _ai_key else "AI 返回为空"
         return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": msg}
     except Exception as e:
