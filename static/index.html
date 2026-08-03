@@ -273,6 +273,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
             <div class="m"><span class="v" style="color:#5c6bc0" id="m-rate">-</span><span class="l">通过率</span></div>
         </div>
         <div class="bar"><div class="bar-f" id="dash-bar" style="width:0%;background:#5c6bc0"></div></div>
+        <div id="dash-ctrls" style="display:none;justify-content:flex-end;gap:6px;margin-top:8px"></div>
         <div class="log" id="dash-log">等待执行...</div>
     </div>
     <div class="card" id="exec-log-list" style="max-height:400px;overflow-y:auto"></div>
@@ -498,25 +499,8 @@ async function generate() {
     document.getElementById("results").scrollIntoView({behavior:"smooth"});
     window._lastPlan = plan;
     window._lastPid = "";
-    var btn = document.getElementById("stop-btn");
-    btn._state = "running";
-    btn.onclick = function(){
-        if (btn._state === "running") {
-            // Hard stop: kill process + browser + close SSE
-            fetch('/api/stop?sid=' + encodeURIComponent(window._lastPid||""), {method:'POST'});
-            if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}
-            btn.textContent = "重新执行";
-            btn.style.background = "#5c6bc0";
-            btn._state = "stopped";
-            document.getElementById("r-bar").style.background = "#ef5350";
-            document.getElementById("res-title").textContent = plan.name + " — 已停止";
-            document.getElementById("r-log").textContent += "\n⏹ 已停止\n";
-        } else if (btn._state === "stopped") {
-            btn.style.display = "none";
-            window._counters = {};
-            generate();
-        }
-    };
+    // Use the shared 3-state button controller from _runGenerate
+    _setRunButtons(plan, "running");
 
     // SSE stream
     try {
@@ -586,6 +570,14 @@ function _streamSSE(pid, plan) {
 // end _streamSSE
 
 // ===== PAUSE / RESUME / STOP =====
+function _setRunButtons(plan, state) {
+    var btn = document.getElementById("stop-btn");
+    if (!btn) return;
+    btn._state = state; btn._plan = plan;
+    if (state === "running") {
+        btn.innerHTML = '<span style="display:flex;gap:6px"><button class="btn btn-sm" onclick="pauseExec()" style="background:#f59e0b;color:#fff;padding:4px 10px;font-size:11px">⏸ 暂停</button><button class="btn btn-sm" onclick="stopExec()" style="background:#ef5350;color:#fff;padding:4px 10px;font-size:11px">⏹ 停止</button></span>';
+    }
+}
 function pauseExec() {
     if (window._activeEvt) { window._activeEvt.close(); window._activeEvt = null; }
     var btn = document.getElementById("stop-btn");
@@ -672,6 +664,8 @@ async function execHist() {
     document.getElementById("m-rate").textContent = "-";
     document.getElementById("dash-bar").style.width = "5%";
     document.getElementById("dash-bar").style.background = "#5c6bc0";
+    document.getElementById("dash-ctrls").style.display = "flex";
+    document.getElementById("dash-ctrls").innerHTML = '<button class="btn btn-sm" onclick="pauseExec()" style="background:#f59e0b;color:#fff;padding:4px 10px;font-size:11px">⏸ 暂停</button><button class="btn btn-sm" onclick="stopExec()" style="background:#ef5350;color:#fff;padding:4px 10px;font-size:11px">⏹ 停止</button>';
 
     // POST plan first, get short ID
     try {
@@ -708,6 +702,7 @@ async function execHist() {
             document.getElementById("dash-bar").style.width = "100%";
             document.getElementById("dash-bar").style.background = d.failed === 0 ? "#27ae60" : "#ef5350";
             document.getElementById("dash-title").textContent = plan.name + " — " + (d.failed === 0 ? "全部通过" : "部分失败");
+            document.getElementById("dash-ctrls").style.display = "none";
         }
         } catch(e) { /* skip malformed SSE */ }
     };
@@ -897,9 +892,7 @@ async function execPreviewed() {
 }
 async function _runGenerate(plan) {
     window._counters = {};
-    var btn = document.getElementById("stop-btn");
-    btn._state = "running"; btn._plan = plan;
-    btn.innerHTML = '<span style="display:flex;gap:6px"><button class="btn btn-sm" onclick="pauseExec()" style="background:#f59e0b;color:#fff;padding:4px 10px;font-size:11px">⏸ 暂停</button><button class="btn btn-sm" onclick="stopExec()" style="background:#ef5350;color:#fff;padding:4px 10px;font-size:11px">⏹ 停止</button></span>';
+    _setRunButtons(plan, "running");
     try {
         const pr = await fetch('/api/plan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
         if (!pr.ok) {
