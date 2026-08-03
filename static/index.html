@@ -127,6 +127,7 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
             <button class="btn btn-sm" onclick="loadAllPRDs()" style="background:#5c6bc0;color:#fff;font-size:12px;padding:5px 10px">📚 全部加载</button>
             <label class="add-btn" style="cursor:pointer;font-size:12px;padding:5px 10px;display:flex;align-items:center;gap:4px;background:#5c6bc0;color:#fff;border-radius:6px">📂 上传文件<input type="file" accept=".md,.txt,.json,.yaml" multiple onchange="uploadPRD(this)" style="display:none"></label>
             <button class="btn btn-sm" id="btn-analyze" onclick="analyzeContext()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">AI 分析业务语义</button>
+            <button class="btn btn-sm" id="btn-analyze-cancel" onclick="_cancelAnalyze()" style="background:#ef5350;color:#fff;font-size:12px;padding:6px 12px;display:none">取消</button>
             <button class="btn btn-sm" onclick="document.getElementById('p-context').value='';_ctx={};renderContext()" style="font-size:12px;padding:6px 12px">清除</button>
             <span id="ctx-hint" style="font-size:11px;color:#888"></span>
             <span id="ctx-spinner" style="display:none;font-size:11px;color:#5c6bc0">⏳ 分析中...</span>
@@ -550,7 +551,7 @@ function _streamSSE(pid, plan) {
         } else if (d.t === "done") {
             evt.close();
             window._activeEvt = null; window._generating = false;
-            var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; }
+            var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.innerHTML = '<button class="btn btn-sm" onclick="location.reload()" style="background:#5c6bc0;color:#fff;padding:4px 10px;font-size:11px">🔄 重新开始</button>'; }
             setTimeout(async ()=>{
                 try{
                     const r = await fetch('/api/report-count');
@@ -570,9 +571,40 @@ function _streamSSE(pid, plan) {
         }
         } catch(e) { /* skip malformed SSE messages */ }
     };
-    evt.onerror = function() { evt.close(); window._activeEvt = null; window._generating = false; var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.style.display = "none"; } var bar = document.getElementById("r-bar"); if(bar) bar.style.background = "#ef5350"; var tit = document.getElementById("res-title"); if(tit) tit.textContent = plan.name + " — 连接中断"; };
+    evt.onerror = function() { evt.close(); window._activeEvt = null; window._generating = false; var sb = document.getElementById("stop-btn"); if(sb){ sb._state = "done"; sb.innerHTML = '<button class="btn btn-sm" onclick="resumeExec()" style="background:#f59e0b;color:#fff;padding:4px 10px;font-size:11px">🔄 重连</button>'; } var bar = document.getElementById("r-bar"); if(bar) bar.style.background = "#ef5350"; var tit = document.getElementById("res-title"); if(tit) tit.textContent = plan.name + " — 连接中断"; };
 }
 // end _streamSSE
+
+// ===== PAUSE / RESUME / STOP =====
+function pauseExec() {
+    if (window._activeEvt) { window._activeEvt.close(); window._activeEvt = null; }
+    var btn = document.getElementById("stop-btn");
+    btn._state = "paused";
+    btn.innerHTML = '<span style="display:flex;gap:6px"><button class="btn btn-sm" onclick="resumeExec()" style="background:#5c6bc0;color:#fff;padding:4px 10px;font-size:11px">▶ 继续</button><button class="btn btn-sm" onclick="stopExec()" style="background:#ef5350;color:#fff;padding:4px 10px;font-size:11px">⏹ 停止</button></span>';
+    var bar = document.getElementById("r-bar"); if(bar) bar.style.background = "#f59e0b";
+    var tit = document.getElementById("res-title"); if(tit) tit.textContent = (btn._plan?btn._plan.name:'') + " — ⏸ 已暂停";
+}
+function resumeExec() {
+    var pid = window._lastPid;
+    if (!pid) return;
+    var btn = document.getElementById("stop-btn");
+    btn._state = "running";
+    btn.innerHTML = '<span style="display:flex;gap:6px"><button class="btn btn-sm" onclick="pauseExec()" style="background:#f59e0b;color:#fff;padding:4px 10px;font-size:11px">⏸ 暂停</button><button class="btn btn-sm" onclick="stopExec()" style="background:#ef5350;color:#fff;padding:4px 10px;font-size:11px">⏹ 停止</button></span>';
+    var bar = document.getElementById("r-bar"); if(bar) bar.style.background = "#5c6bc0";
+    var tit = document.getElementById("res-title"); if(tit) tit.textContent = (btn._plan?btn._plan.name:'') + " — 继续执行...";
+    if (!window._counters) window._counters = {};
+    if (!window._counters[pid]) window._counters[pid] = {tt:0, pp:0, ff:0};
+    _streamSSE(pid, btn._plan);
+}
+function stopExec() {
+    fetch('/api/stop?sid=' + encodeURIComponent(window._lastPid||""), {method:'POST'});
+    if (window._activeEvt) { window._activeEvt.close(); window._activeEvt = null; }
+    var btn = document.getElementById("stop-btn");
+    btn.innerHTML = '<button class="btn btn-sm" onclick="if(btn._plan)_runGenerate(btn._plan)" style="background:#5c6bc0;color:#fff;padding:4px 10px;font-size:11px">↻ 重新执行</button>';
+    btn._state = "stopped";
+    var bar = document.getElementById("r-bar"); if(bar) bar.style.background = "#ef5350";
+    var tit = document.getElementById("res-title"); if(tit) tit.textContent = (btn._plan?btn._plan.name:'') + " — 已停止";
+}
 
 // ===== EXEC =====
 function loadHist() {
@@ -848,19 +880,8 @@ async function execPreviewed() {
 async function _runGenerate(plan) {
     window._counters = {};
     var btn = document.getElementById("stop-btn");
-    btn._state = "running";
-    btn.onclick = function(){
-        if (btn._state === "running") {
-            fetch('/api/stop?sid=' + encodeURIComponent(window._lastPid||""), {method:'POST'});
-            if(window._activeEvt){window._activeEvt.close();window._activeEvt=null;}
-            btn.textContent = "重新执行"; btn.style.background = "#5c6bc0";
-            btn._state = "stopped";
-            document.getElementById("r-bar").style.background = "#ef5350";
-            document.getElementById("res-title").textContent = plan.name + " — 已停止";
-        } else if (btn._state === "stopped") {
-            btn.style.display = "none"; window._counters = {}; _runGenerate(plan);
-        }
-    };
+    btn._state = "running"; btn._plan = plan;
+    btn.innerHTML = '<span style="display:flex;gap:6px"><button class="btn btn-sm" onclick="pauseExec()" style="background:#f59e0b;color:#fff;padding:4px 10px;font-size:11px">⏸ 暂停</button><button class="btn btn-sm" onclick="stopExec()" style="background:#ef5350;color:#fff;padding:4px 10px;font-size:11px">⏹ 停止</button></span>';
     try {
         const pr = await fetch('/api/plan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(plan)});
         if (!pr.ok) {
@@ -1080,18 +1101,22 @@ function updateContext(jstr) {
     try { _ctx = JSON.parse(jstr); renderContext(); save(); document.getElementById('ctx-hint').textContent = '✅ 已手动编辑'; }
     catch(e) { alert('JSON 格式错误'); }
 }
+var _abortAnalyze = null;
+function _cancelAnalyze() { if (_abortAnalyze) { _abortAnalyze.abort(); _abortAnalyze = null; } document.getElementById('btn-analyze').style.display=''; document.getElementById('btn-analyze-cancel').style.display='none'; document.getElementById('ctx-spinner').style.display='none'; document.getElementById('ctx-hint').textContent = '已取消'; }
 async function analyzeContext() {
     var text = document.getElementById('p-context').value.trim();
     if (!text) { alert('请先输入或加载业务文档内容'); return; }
     var btn = document.getElementById('btn-analyze');
     var spinner = document.getElementById('ctx-spinner');
-    btn.textContent = '分析中...'; btn.disabled = true; spinner.style.display = 'inline';
-    document.getElementById('ctx-hint').textContent = '';
-    var prev = _ctx; // preserve existing good context
+    var cancelBtn = document.getElementById('btn-analyze-cancel');
+    btn.style.display = 'none'; cancelBtn.style.display = 'inline';
+    spinner.style.display = 'inline'; document.getElementById('ctx-hint').textContent = '';
+    var prev = _ctx;
+    _abortAnalyze = new AbortController();
     try {
         var aiCfg = {};
         try { var c=JSON.parse(localStorage.getItem('ai_profiles')||'[]'); var a=c.find(x=>x.id===localStorage.getItem('ai_active'))||c[0]||{}; aiCfg.model=a.model||''; aiCfg.base_url=a.base_url||''; } catch(e) {}
-        var r = await fetch('/api/analyze-context', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:text, model:aiCfg.model, base_url:aiCfg.base_url})});
+        var r = await fetch('/api/analyze-context', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:text, model:aiCfg.model, base_url:aiCfg.base_url}), signal: _abortAnalyze.signal});
         var d = await r.json();
         if (d.ok && d.context) {
             var nc = d.context;
@@ -1113,9 +1138,9 @@ async function analyzeContext() {
             document.getElementById('ctx-hint').textContent = '⚠ ' + (d.error || '分析失败，请检查文档内容');
         }
     } catch(e) {
-        document.getElementById('ctx-hint').textContent = '⚠ 网络错误: ' + e.message;
+        if (e.name !== 'AbortError') document.getElementById('ctx-hint').textContent = '⚠ 网络错误: ' + e.message;
     }
-    btn.textContent = 'AI 分析业务语义'; btn.disabled = false; spinner.style.display = 'none';
+    document.getElementById('btn-analyze').style.display = ''; cancelBtn.style.display = 'none'; spinner.style.display = 'none'; _abortAnalyze = null;
 }
 // ===== AI CONFIG (multi-profile) =====
 let _aiProfiles = [], _aiActiveId = '', _aiEditingId = '';
