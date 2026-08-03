@@ -1593,13 +1593,12 @@ async def ai_suggest_stream(request: Request):
         if rules:
             ctx_block = "\n业务规则（优先覆盖）:\n" + "\n".join(f"- {r if isinstance(r,str) else str(r)[:200]}" for r in rules[:10])
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""你是 ISTQB 认证的测试工程师。为每个端点设计测试用例，覆盖正向、反向、边界、安全场景。
-API列表:
+    prompt = f"""测试工程师。为每个API生成2条用例（1条正常+1条异常），直接输出JSON行：
 {api_lines}
 {ctx_block}
-每条用例输出一行精简JSON（直接输出对象，不要外层数组，不要markdown）:
-{{"title":"查询用户列表-正常分页","priority":"P0","expected":"200,数组","steps":"1.GET 2.检查200 3.验证数组","method":"GET","path":"/api/users"}}
-每个端点至少3条。steps字段尽量简短。直接输出JSON行。"""
+格式: {{"title":"正常返回","priority":"P0","expected":"200","method":"GET","path":"/api/path"}}}
+{{"title":"缺少参数","priority":"P1","expected":"400","method":"POST","path":"/api/path"}}
+每个端点2条，不要外层数组，不要markdown，不要steps字段。"""
 
     async def event_stream():
         import random, httpx
