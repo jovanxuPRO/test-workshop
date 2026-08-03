@@ -785,6 +785,23 @@ def list_history_json():
             "ready": streak >= 3}
 
 
+@app.get("/api/audit-export")
+def audit_export(from_date: str = "", to_date: str = ""):
+    """Export execution history + test case library as JSON for compliance audit."""
+    entries = load_hist()
+    tcs = load_tc()
+    return {
+        "export_time": datetime.now().isoformat(),
+        "total_executions": len(entries),
+        "execution_history": entries[:50],
+        "test_case_library_count": len(tcs),
+        "test_cases": tcs[:200],
+        "streak": sum(1 for e in entries if e.get("failed", 0) == 0 and entries.index(e) < (
+            next((i for i, x in enumerate(entries) if x.get("failed", 0) > 0), len(entries))
+        ))  # streak until first failure
+    }
+
+
 @app.get("/api/history")
 def list_history():
     entries = load_hist()
@@ -2145,6 +2162,8 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", metavar="DIR", default=".", help="Output directory for report (default: current dir)")
     parser.add_argument("--headless", action="store_true", help="Run Playwright in headless mode")
     parser.add_argument("--dry-run", action="store_true", help="Generate test code only, don't execute")
+    parser.add_argument("--port", type=int, default=0, help="Server port (overrides TW_PORT env)")
+    parser.add_argument("--output-format", choices=["xml","html","json"], default="xml", help="Report format for CI mode")
     args = parser.parse_args()
 
     if args.run_config:
@@ -2211,7 +2230,7 @@ if __name__ == "__main__":
     # Server mode
     import uvicorn
     host = os.environ.get("TW_HOST", "127.0.0.1")
-    port = int(os.environ.get("TW_PORT", "9000"))
+    port = int(os.environ.get("TW_PORT", str(args.port or "9000")))
     cert = os.environ.get("TW_CERT_FILE", "")
     key = os.environ.get("TW_KEY_FILE", "")
     kwargs = {"host": host, "port": port}
