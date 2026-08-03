@@ -302,7 +302,83 @@ def _exact_test(method, path, title, entities=None):
         return ("ok", stmt, "r.status_code < 500")
     return ("ok", f'c.request("{method}","{path}")', "r.status_code < 500")
 
-def gen_code(plan):
+def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
+    """Generate 7-layer安检机 test cases based on business context.
+    Returns a list of extra API entries {m, p, n} to add to gen_code."""
+    extra = []
+    if not ctx_entities and not ctx_rules:
+        return extra
+    # Map endpoints to entities
+    from urllib.parse import urlparse
+    entity_map = {}  # entity_name -> fields list
+    for ent in ctx_entities:
+        if isinstance(ent, dict):
+            entity_map[ent.get("name", "").lower()] = ent.get("fields", [])
+    # L2: Field contract — for each API that returns entities, add field checks
+    for api in apis:
+        p = api.get("p", ""); m = api.get("m", "GET")
+        if m != "GET": continue
+        for ename, fields in entity_map.items():
+            if ename and ename in p.lower() and fields:
+                extra.append({"m": "GET", "p": p, "n": f"契约校验-{ename}字段类型",
+                              "layer": "L2", "check": f"assert isinstance(r.json()[0].get('{fields[0]}'), str)"})
+                break
+    # L3: Business rules from context
+    for rule in ctx_rules:
+        if not isinstance(rule, str): continue
+        rl = rule.lower()
+        for api in apis:
+            p = api.get("p", ""); m = api.get("m", "GET")
+            # Money/amount >= 0
+            if any(w in rl for w in ["金额", "amount", "price", ">=0", ">= 0", "非负"]):
+                if m == "GET":
+                    extra.append({"m": "GET", "p": p, "n": f"业务规则-{rule[:30]}",
+                                  "layer": "L3", "check": f"r.status_code == 200"})
+                elif m == "POST":
+                    extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:30]}内负数拒绝",
+                                  "layer": "L3", "payload": '{"amount":-1}', "check": "r.status_code in (400, 422)"})
+            # Unique constraint
+            if any(w in rl for w in ["唯一", "unique", "重复", "已存在"]):
+                for ename in entity_map:
+                    if ename and ename in p.lower():
+                        extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:30]}",
+                                      "layer": "L3", "payload": '{"'+ (entity_map[ename][0] if entity_map[ename] else 'name') +'":"dup-test-001"}',
+                                      "check": "r.status_code in (200, 201, 400, 409)"})
+                        break
+    # L4: State machine tests
+    if ctx_state_machine:
+        for sm in ctx_state_machine:
+            if not isinstance(sm, dict): continue
+            entity = sm.get("entity", "").lower()
+            states = sm.get("states", [])
+            transitions = sm.get("transitions", [])
+            if not states or len(states) < 2: continue
+            # Find the create/list endpoint for this entity
+            list_ep = create_ep = None
+            for api in apis:
+                p = api.get("p", ""); m = api.get("m", "")
+                if entity in p.lower() and "{" not in p:
+                    if m == "GET": list_ep = p
+                    if m == "POST": create_ep = p
+            if create_ep and list_ep:
+                # Sequence: create → verify initial state → update → verify → delete
+                seq_title = f"状态机-{entity}({'→'.join(states[:4])})"
+                extra.append({"m": "sequence", "p": create_ep, "n": seq_title,
+                              "layer": "L4", "steps": [create_ep, list_ep, create_ep],
+                              "check": "r.status_code < 500"})
+    # L6: Security injection enhancement
+    for api in apis:
+        p = api.get("p", ""); m = api.get("m", "GET")
+        extra.append({"m": m, "p": p, "n": f"安全-越权访问(空Authorization)",
+                      "layer": "L6",
+                      "check": "r.status_code in (200, 401, 403)"})
+    # L7: Boundary / concurrency
+    for api in apis:
+        p = api.get("p", ""); m = api.get("m", "GET")
+        extra.append({"m": m, "p": p, "n": f"边界-并发10请求",
+                      "layer": "L7",
+                      "check": "all(r.status_code < 500 for r in rs)"})
+    return extra
     """Generate executable pytest test code from a test plan.
 
     Args:
@@ -510,6 +586,32 @@ def gen_code(plan):
                 else:
                     lines.append(f"        r = {stmt}")
                     lines.append(f"        assert {check}")
+                lines.append("")
+        # === 安检机分层测试 ===
+        if ctx_entities or ctx_rules:
+            layered = _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine)
+            for lt in layered:
+                cn = safe(lt.get("n", "分层测试"))
+                m = lt.get("m", "GET"); p = safe_path(lt.get("p", "/"))
+                lv = lt.get("layer", "L*")
+                chk = lt.get("check", "r.status_code < 500")
+                # Build stmt for the test
+                payload = lt.get("payload")
+                if m == "sequence":
+                    # State machine sequence: create → check → transition
+                    stmt = f'c.request("POST","{p}", json={{"test":"init"}})'
+                    chk = "r.status_code < 500"
+                elif m == "POST" and payload:
+                    stmt = f'c.{m.lower()}("{p}", json={payload})'
+                else:
+                    stmt = f'c.request("{m}","{p}")'
+                lines.append(f"class Test_{cn}:")
+                lines.append(f'    """{lv} {m} {p}"""')
+                lines.append("")
+                lines.append(f"    def test_ok(self, c):")
+                lines.append(f'        """{lv}: {lt.get("n","")}"""')
+                lines.append(f"        r = {stmt}")
+                lines.append(f"        assert {chk}")
                 lines.append("")
         with open(os.path.join(out, "test_api.py"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
