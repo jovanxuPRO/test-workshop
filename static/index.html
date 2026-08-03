@@ -753,11 +753,13 @@ function previewCases() {
     fetch('/api/ai-suggest-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apis,pages:pgs,seed:Date.now()%10000,model:aiCfg.model,base_url:aiCfg.base_url,max_tokens:aiCfg.max_tokens,context:_ctx})})
     .then(async r=>{
         if(!r.ok) throw new Error('HTTP '+r.status);
+        console.log('stream: connected, body=',!!r.body);
         clearTimeout(_previewTimeout); clearInterval(_progressTimer);
         var suggestions=[],num=0,rows='',priColor={P0:'#ef5350',P1:'#ff9800',P2:'#5c6bc0'},d={source:'ai'};
         var reader=r.body.getReader(),dec=new TextDecoder(),buf='',maxIter=50000;
-        while(maxIter-->0){var {done,value}=await reader.read();if(done)break;
+        while(maxIter-->0){var {done,value}=await reader.read();if(done){console.log('stream: done');break;}
         buf+=dec.decode(value,{stream:true});var lines=buf.split('\n');buf=lines.pop()||'';
+        console.log('stream: chunk len='+value.length+' lines='+lines.length);
         for(var li=0;li<lines.length&&maxIter-->0;li++){var line=lines[li].trim();if(!line.startsWith('data: '))continue;
         try{var dd=JSON.parse(line.slice(6));}catch(e){continue;}
         if(dd.t==='info'){var pt=document.getElementById('ai-progress-text');if(pt)pt.textContent=dd.msg;}
