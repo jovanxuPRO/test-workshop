@@ -124,7 +124,8 @@ input:focus,textarea:focus,select:focus{border-color:#5c6bc0;outline:none}
             <select id="prd-select" onchange="loadPRDFile()" style="width:auto;padding:5px 10px;font-size:12px">
                 <option value="">📄 加载内置 PRD...</option>
             </select>
-            <label class="add-btn" style="cursor:pointer;font-size:12px;padding:5px 10px;display:flex;align-items:center;gap:4px;background:#5c6bc0;color:#fff;border-radius:6px">📂 上传文件<input type="file" accept=".md,.txt,.json,.yaml" onchange="uploadPRD(this)" style="display:none"></label>
+            <button class="btn btn-sm" onclick="loadAllPRDs()" style="background:#5c6bc0;color:#fff;font-size:12px;padding:5px 10px">📚 全部加载</button>
+            <label class="add-btn" style="cursor:pointer;font-size:12px;padding:5px 10px;display:flex;align-items:center;gap:4px;background:#5c6bc0;color:#fff;border-radius:6px">📂 上传文件<input type="file" accept=".md,.txt,.json,.yaml" multiple onchange="uploadPRD(this)" style="display:none"></label>
             <button class="btn btn-sm" id="btn-analyze" onclick="analyzeContext()" style="background:#5c6bc0;color:#fff;font-size:13px;padding:6px 16px">AI 分析业务语义</button>
             <button class="btn btn-sm" onclick="document.getElementById('p-context').value='';_ctx={};renderContext()" style="font-size:12px;padding:6px 12px">清除</button>
             <span id="ctx-hint" style="font-size:11px;color:#888"></span>
@@ -935,13 +936,36 @@ async function loadPRDFile() {
     } catch(e) { document.getElementById('ctx-hint').textContent = '⚠ 加载失败'; }
 }
 function uploadPRD(input) {
-    var file = input.files[0]; if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        document.getElementById('p-context').value = e.target.result;
-        document.getElementById('ctx-hint').textContent = '✅ 已加载: ' + file.name;
-    };
-    reader.readAsText(file);
+    var files = input.files;
+    if (!files.length) return;
+    var loaded = 0, parts = [];
+    Array.from(files).forEach(function(file, i) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            parts[i] = '\n\n--- ' + file.name + ' ---\n\n' + e.target.result;
+            loaded++;
+            if (loaded === files.length) {
+                document.getElementById('p-context').value = parts.join('');
+                document.getElementById('ctx-hint').textContent = '✅ 已加载 ' + files.length + ' 个文件';
+            }
+        };
+        reader.readAsText(file);
+    });
+}
+async function loadAllPRDs() {
+    try {
+        var r = await fetch('/api/prd-list');
+        var d = await r.json();
+        if (!d.prds || !d.prds.length) { document.getElementById('ctx-hint').textContent = '⚠ 无可用PRD'; return; }
+        var parts = [];
+        for (var i = 0; i < d.prds.length; i++) {
+            var rr = await fetch('/api/prd-load?file=' + encodeURIComponent(d.prds[i].file));
+            var dd = await rr.json();
+            if (dd.ok) parts.push('\n\n--- ' + d.prds[i].name + ' ---\n\n' + dd.content);
+        }
+        document.getElementById('p-context').value = parts.join('');
+        document.getElementById('ctx-hint').textContent = '✅ 已加载全部 ' + d.prds.length + ' 份 PRD';
+    } catch(e) { document.getElementById('ctx-hint').textContent = '⚠ 加载失败'; }
 }
 function renderContext() {
     var d = document.getElementById('ctx-result');
