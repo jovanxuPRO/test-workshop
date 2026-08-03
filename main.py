@@ -1547,7 +1547,7 @@ async def ai_suggest(request: Request):
         # Validate base_url to prevent key exfiltration
         if not is_safe_url(base_url):
             return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI Base URL 被安全策略拒绝"}
-        if _ai_key and len(_ai_key) >= 20:
+        if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()[:20]):
             try:
                 results = await _call_llm(apis, seed, model, base_url, body.get("context"))
                 if results is not None and len(results) > 0:
@@ -1579,7 +1579,7 @@ async def analyze_context(request: Request):
         if not is_safe_url(base_url):
             return {"ok": False, "error": "AI Base URL 安全策略拒绝"}
 
-        if _ai_key and len(_ai_key) >= 20:
+        if _ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-") or "deepseek" in _ai_key.lower()[:20]):
             try:
                 result = await _analyze_with_ai(text, model, base_url)
                 if result:
