@@ -320,8 +320,10 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         if m != "GET": continue
         for ename, fields in entity_map.items():
             if ename and ename in p.lower() and fields:
-                extra.append({"m": "GET", "p": p, "n": f"契约校验-{ename}字段类型",
-                              "layer": "L2", "check": f"assert isinstance(r.json()[0].get('{fields[0]}'), str)"})
+                # Check multiple fields, not just the first
+                field_checks = " and ".join([f"isinstance(d[0].get('{f}'), (str, int, float, list, dict))" for f in fields[:5]])
+                extra.append({"m": "GET", "p": p, "n": f"契约校验-{ename}({len(fields[:5])}字段)",
+                              "layer": "L2", "check": f"d = r.json().get('data', r.json()); isinstance(d, list) and len(d) > 0 and ({field_checks})"})
                 break
     # L3: Business rules from context
     for rule in ctx_rules:
@@ -329,22 +331,41 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         rl = rule.lower()
         for api in apis:
             p = api.get("p", ""); m = api.get("m", "GET")
-            # Money/amount >= 0
-            if any(w in rl for w in ["金额", "amount", "price", ">=0", ">= 0", "非负"]):
-                if m == "GET":
-                    extra.append({"m": "GET", "p": p, "n": f"业务规则-{rule[:30]}",
-                                  "layer": "L3", "check": f"r.status_code == 200"})
-                elif m == "POST":
-                    extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:30]}内负数拒绝",
-                                  "layer": "L3", "payload": '{"amount":-1}', "check": "r.status_code in (400, 422)"})
+            # Money/amount >= 0 or stock constraint
+            if any(w in rl for w in ["金额", "amount", "price", "价格", "库存", "stock", ">=0", "非负", "不能为负", "必须>0"]):
+                extra.append({"m":"POST","p":p,"n":f"业务规则-{rule[:50]}→负数拒绝","layer":"L3",
+                    "payload":'{"amount":-1,"stock":-5}',"check":"r.status_code in (400, 422)"})
             # Unique constraint
-            if any(w in rl for w in ["唯一", "unique", "重复", "已存在"]):
+            elif any(w in rl for w in ["唯一", "unique", "重复", "已存在"]):
                 for ename in entity_map:
                     if ename and ename in p.lower():
-                        extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:30]}",
+                        extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:50]}",
                                       "layer": "L3", "payload": '{"'+ (entity_map[ename][0] if entity_map[ename] else 'name') +'":"dup-test-001"}',
                                       "check": "r.status_code in (200, 201, 400, 409)"})
                         break
+            # Permission/auth rules
+            elif any(w in rl for w in ["管理员", "admin", "权限", "普通用户", "only admin", "无权", "只能看", "越权"]):
+                extra.append({"m": m, "p": p, "n": f"业务规则-{rule[:50]}",
+                              "layer": "L3", "check": "r.status_code in (200, 401, 403)"})
+            # State/status transition constraint
+            elif any(w in rl for w in ["不可取消", "only created", "不能取消", "不允许", "之后不可", "can't cancel"]):
+                extra.append({"m": "DELETE", "p": p.replace("/{id}", "/999999"),
+                              "n": f"业务规则-{rule[:50]}", "layer": "L3",
+                              "check": "r.status_code in (400, 404)"})
+            # Required field / not null
+            elif any(w in rl for w in ["必填", "required", "不能为空", "not null", "缺少"]):
+                extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:50]}→空字段拒绝",
+                              "layer": "L3", "payload": '{"name":""}',
+                              "check": "r.status_code in (400, 422)"})
+            # Amount limit / maximum
+            elif any(w in rl for w in ["超过", "不能超过", "exceed", "上限", "最多"]):
+                extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:50]}→超限拒绝",
+                              "layer": "L3", "payload": '{"amount":99999999}',
+                              "check": "r.status_code in (400, 422)"})
+            # General must/should/auto rules
+            elif any(w in rl for w in ["必须", "must", "shall", "应", "自动", "auto"]):
+                extra.append({"m": m, "p": p, "n": f"业务规则-{rule[:50]}",
+                              "layer": "L3", "check": "r.status_code < 500"})
     # L4: State machine tests
     if ctx_state_machine:
         for sm in ctx_state_machine:
@@ -484,9 +505,16 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         ut += '        r = httpx.get(B, timeout=15, follow_redirects=True)\n'
         ut += '        assert r.status_code < 500\n\n'
         ut += '    def test_2_response_time(self):\n'
-        ut += '        """响应时间基准"""\n'
-        ut += '        t0=time.time(); httpx.get(B,timeout=20,follow_redirects=True)\n'
-        ut += '        assert time.time()-t0<10\n\n'
+        ut += '        """响应时间百分位 (P50/P95)"""\n'
+        ut += '        times=[]\n'
+        ut += '        for _ in range(10):\n'
+        ut += '            t0=time.time(); httpx.get(B,timeout=20,follow_redirects=True)\n'
+        ut += '            times.append(time.time()-t0)\n'
+        ut += '        times.sort()\n'
+        ut += '        p50=times[len(times)//2]\n'
+        ut += '        p95=times[int(len(times)*0.95)]\n'
+        ut += '        print(f"P50={{p50:.3f}}s P95={{p95:.3f}}s")\n'
+        ut += '        assert p50<5 and p95<8\n\n'
         ut += '    def test_3_ssl_valid(self):\n'
         ut += '        """SSL证书有效"""\n'
         ut += '        if not B.startswith("https"): pytest.skip("HTTP only")\n'
@@ -509,12 +537,15 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         ut += '        r=httpx.get(B,timeout=15,follow_redirects=True)\n'
         ut += '        assert isinstance(r.encoding, str) or r.status_code>=300\n\n'
         ut += '    def test_8_concurrent(self):\n'
-        ut += '        """并发请求"""\n'
+        ut += '        """并发10请求性能"""\n'
         ut += '        import concurrent.futures\n'
-        ut += '        def req(): return httpx.get(B,timeout=20,follow_redirects=True).status_code\n'
-        ut += '        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:\n'
-        ut += '            results = list(ex.map(lambda _: req(), range(3)))\n'
-        ut += '        assert all(s<500 for s in results)\n\n'
+        ut += '        def req(): t0=time.time(); r=httpx.get(B,timeout=20,follow_redirects=True); return (r.status_code, time.time()-t0)\n'
+        ut += '        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:\n'
+        ut += '            results = list(ex.map(lambda _: req(), range(10)))\n'
+        ut += '        codes = [r[0] for r in results]; times = sorted([r[1] for r in results])\n'
+        ut += '        p50 = times[len(times)//2]\n'
+        ut += '        print(f"Concurrency 10: P50={p50:.3f}s max={times[-1]:.3f}s")\n'
+        ut += '        assert all(s<500 for s in codes) and p50<8\n\n'
         with open(os.path.join(out, "test_unit.py"), "w", encoding="utf-8") as f:
             f.write(ut)
 
