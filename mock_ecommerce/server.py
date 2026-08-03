@@ -38,6 +38,9 @@ def products_page(): return FileResponse(os.path.join(static_dir, "products.html
 @app.get("/orders")
 def orders_page(): return FileResponse(os.path.join(static_dir, "orders.html"))
 
+@app.get("/refunds")
+def refunds_page(): return FileResponse(os.path.join(static_dir, "refunds.html"))
+
 @app.get("/api/info")
 def info():
     return {"service": "E-Commerce Order System v2.0", "auth": "JWT Bearer", "roles": ["admin","operator","viewer"],

@@ -11,55 +11,82 @@
 <li><a href="/">Dashboard</a></li>
 <li><a href="/products">商品管理</a></li>
 <li><a href="/orders" class="active">订单管理</a></li>
+<li><a href="/refunds">退款管理</a></li>
 </ul>
 <div class="nav-user"><span id="nav-user-name"></span><button onclick="logout()">退出</button></div>
 </nav>
 <div class="container">
 <div class="card">
-<div class="card-header"><h2>订单列表</h2></div>
-<div class="status-bar">
-<button class="status-filter active" onclick="filterStatus('')">全部</button>
-<button class="status-filter" onclick="filterStatus('created')">待确认</button>
-<button class="status-filter" onclick="filterStatus('confirmed')">已确认</button>
-<button class="status-filter" onclick="filterStatus('paid')">已支付</button>
-<button class="status-filter" onclick="filterStatus('shipped')">已发货</button>
-<button class="status-filter" onclick="filterStatus('delivered')">已完成</button>
-<button class="status-filter" onclick="filterStatus('cancelled')">已取消</button>
+<div class="card-header">
+<h2>订单列表</h2>
+<button class="btn btn-primary" onclick="showCreateOrder()" id="btn-create">+ 创建订单</button>
 </div>
+<div class="status-bar" id="status-bar"></div>
 <table><thead><tr><th>订单号</th><th>商品</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
 <tbody id="order-list"></tbody></table>
 <div class="pagination" id="pagination"></div>
 </div>
 </div>
-<div class="dialog-overlay" id="detail-dialog" style="display:none" onclick="if(event.target===this)document.getElementById('detail-dialog').style.display='none'">
+
+<!-- Detail Dialog -->
+<div class="dialog-overlay" id="detail-dialog" style="display:none" onclick="if(event.target===this)hideDlg('detail-dialog')">
 <div class="dialog" id="detail-content"></div>
 </div>
+
+<!-- Create Order Dialog -->
+<div class="dialog-overlay" id="create-dialog" style="display:none" onclick="if(event.target===this)hideDlg('create-dialog')">
+<div class="dialog">
+<h3>创建订单</h3>
+<div id="create-items"><p style="color:var(--text-muted);font-size:12px">加载商品列表...</p></div>
+<div class="flex" style="justify-content:space-between;margin-top:16px">
+<strong>合计: <span id="create-total" style="color:var(--primary);font-size:18px">¥0.00</span></strong>
+<div class="flex"><button class="btn btn-outline" onclick="hideDlg('create-dialog')">取消</button>
+<button class="btn btn-primary" id="btn-submit-order" onclick="submitOrder()">提交订单</button></div>
+</div>
+</div>
+</div>
+
 <script src="/static/app.js"></script>
 <script>
-var _page=1,_status='',_user={};
-checkAuth();_user=JSON.parse(localStorage.getItem('user')||'{}');load();
+var _page=1,_status='',_user={},_products=[],_cart={};
+checkAuth();_user=JSON.parse(localStorage.getItem('user')||'{}');load();loadProducts();
+
 async function load(){
 try{var params='?page='+_page+'&limit=15';if(_status)params+='&status='+_status;
 var r=await API.get('/api/orders'+params);var d=await r.json();
 var rows='',badges={created:'badge-info',confirmed:'badge-purple',paid:'badge-warning',shipped:'badge-info',delivered:'badge-success',cancelled:'badge-danger'};
 var cnames={created:'待确认',confirmed:'已确认',paid:'已支付',shipped:'已发货',delivered:'已完成',cancelled:'已取消'};
-d.data.forEach(function(o){
-var items=o.items.map(function(i){return i.quantity+'x '+i.product_id}).join(', ');
-rows+='<tr><td style="font-family:monospace;font-size:11px">'+o.id+'</td><td>'+trunc(items,40)+'</td><td style="font-weight:600">'+formatMoney(o.total)+'</td><td><span class="badge '+badges[o.status]+'">'+cnames[o.status]+'</span></td><td>'+formatDate(o.created)+'</td><td class="flex"><button class="btn btn-outline btn-sm" onclick="showOrder(\''+o.id+'\')">详情</button></td></tr>'});document.getElementById('order-list').innerHTML=rows||'<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">暂无订单</td></tr>';}catch(e){if(e.message!=='401')console.error(e)}
+var counts={};d.data.forEach(function(o){var items=o.items.map(function(i){return i.quantity+'x '+i.product_id}).join(', ');
+counts[o.status]=(counts[o.status]||0)+1;
+rows+='<tr><td style="font-family:monospace;font-size:11px">'+o.id+'</td><td>'+trunc(items,40)+'</td><td style="font-weight:600">'+formatMoney(o.total)+'</td><td><span class="badge '+(badges[o.status]||'')+'">'+(cnames[o.status]||o.status)+'</span></td><td>'+formatDate(o.created)+'</td><td class="flex"><button class="btn btn-outline btn-sm" onclick="showOrder(\''+o.id+'\')">详情</button></td></tr>'});document.getElementById('order-list').innerHTML=rows||'<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">暂无订单</td></tr>';
+renderStatusBar(counts);}catch(e){if(e.message!=='401')console.error(e)}
 }
-function filterStatus(s){_status=s;_page=1;document.querySelectorAll('.status-filter').forEach(function(b){b.classList.toggle('active',b.textContent===(s?{created:'待确认',confirmed:'已确认',paid:'已支付',shipped:'已发货',delivered:'已完成',cancelled:'已取消'}[s]:'全部'))});load()}
+function renderStatusBar(counts){var labels={'全部':'',created:'待确认',confirmed:'已确认',paid:'已支付',shipped:'已发货',delivered:'已完成',cancelled:'已取消'};var h='';Object.entries(labels).forEach(function(e){var c=counts[e[1]===''?'created':e[1]]||(e[0]==='全部'?Object.values(counts).reduce(function(a,b){return a+b},0):0);h+='<button class="status-filter'+(e[0]==='全部'&&!_status||_status&&{created:'待确认',confirmed:'已确认',paid:'已支付',shipped:'已发货',delivered:'已完成',cancelled:'已取消'}[_status]===e[1]?' active':'')+'" onclick="filterStatus(\''+(e[0]==='全部'?'':e[0])+'\')">'+e[1]+' ('+c+')</button>'})document.getElementById('status-bar').innerHTML=h}
+function filterStatus(s){_status=s;_page=1;load()}
+
+// Detail
 async function showOrder(id){
 try{var r=await API.get('/api/orders/'+id);var o=await r.json();
-var items=o.items.map(function(i){return'<tr><td>'+i.product_id+'</td><td>'+i.quantity+'</td><td>'+formatMoney(i.unit_price)+'</td><td>'+formatMoney(i.unit_price*i.quantity)+'</td></tr>';}).join('');
+var items=o.items.map(function(i){return'<tr><td>'+i.product_id+'</td><td>'+i.quantity+'</td><td>'+formatMoney(i.unit_price)+'</td><td>'+formatMoney(i.unit_price*i.quantity)+'</td></tr>'}).join('');
 var transitions={created:['confirmed','cancelled'],confirmed:['paid','cancelled'],paid:['shipped'],shipped:['delivered'],delivered:[],cancelled:[]};
-var btns='';if(_user.role!=='viewer')transitions[o.status].forEach(function(t){btns+='<button class="btn btn-primary btn-sm" onclick="transitionOrder(\''+o.id+'\',\''+t+'\')">→ '+t+'</button> '});
-document.getElementById('detail-content').innerHTML='<h3>订单 '+o.id+'</h3><div class="stats-grid" style="margin-bottom:16px"><div class="stat-card"><div class="label">状态</div><div class="value"><span class="badge '+(badges[o.status]||'')+'">'+(cnames[o.status]||o.status)+'</span></div></div><div class="stat-card"><div class="label">金额</div><div class="value">'+formatMoney(o.total)+'</div></div><div class="stat-card"><div class="label">商品数</div><div class="value">'+o.items.length+'</div></div><div class="stat-card"><div class="label">创建时间</div><div class="value" style="font-size:13px">'+formatDate(o.created)+'</div></div></div><table><thead><tr><th>商品ID</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>'+items+'</tbody></table><div class="flex" style="justify-content:flex-end;margin-top:16px">'+btns+'<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'detail-dialog\').style.display=\'none\'">关闭</button></div>';
-document.getElementById('detail-dialog').style.display='flex';
-}catch(e){toast(e.message,'error')}
-}
-var badges={created:'badge-info',confirmed:'badge-purple',paid:'badge-warning',shipped:'badge-info',delivered:'badge-success',cancelled:'badge-danger'};
+var btns='';if(_user.role!=='viewer')transitions[o.status].forEach(function(t){btns+='<button class="btn btn-primary btn-sm" onclick="transitionOrder(\''+o.id+'\',\''+t+'\')">'+{confirmed:'→ 确认',paid:'→ 支付',shipped:'→ 发货',delivered:'→ 完成',cancelled:'→ 取消'}[t]+'</button> '});
 var cnames={created:'待确认',confirmed:'已确认',paid:'已支付',shipped:'已发货',delivered:'已完成',cancelled:'已取消'};
-async function transitionOrder(id,status){try{var r=await API.put('/api/orders/'+id+'/status',{status:status});if(r.ok){toast('已转为 '+cnames[status],'success');document.getElementById('detail-dialog').style.display='none';load()}else{var d=await r.json();toast(d.detail||'操作失败','error')}}catch(e){toast(e.message,'error')}}
+document.getElementById('detail-content').innerHTML='<h3>订单 '+o.id+'</h3><div class="stats-grid" style="margin-bottom:16px"><div class="stat-card"><div class="label">状态</div><div class="value"><span class="badge '+({created:'badge-info',confirmed:'badge-purple',paid:'badge-warning',shipped:'badge-info',delivered:'badge-success',cancelled:'badge-danger'}[o.status])+'">'+(cnames[o.status]||o.status)+'</span></div></div><div class="stat-card"><div class="label">金额</div><div class="value">'+formatMoney(o.total)+'</div></div><div class="stat-card"><div class="label">商品数</div><div class="value">'+o.items.length+'</div></div><div class="stat-card"><div class="label">创建时间</div><div class="value" style="font-size:13px">'+formatDate(o.created)+'</div></div></div><table><thead><tr><th>商品ID</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>'+items+'</tbody></table><div class="flex" style="justify-content:flex-end;margin-top:16px">'+btns+'<button class="btn btn-outline btn-sm" onclick="hideDlg(\'detail-dialog\')">关闭</button></div>';
+showDlg('detail-dialog');}catch(e){toast(e.message,'error')}
+}
+var cnames={created:'待确认',confirmed:'已确认',paid:'已支付',shipped:'已发货',delivered:'已完成',cancelled:'已取消'};
+async function transitionOrder(id,status){try{var r=await API.put('/api/orders/'+id+'/status',{status:status});if(r.ok){toast('已转为 '+cnames[status],'success');hideDlg('detail-dialog');load()}else{var d=await r.json();toast(d.detail||'操作失败','error')}}catch(e){toast(e.message,'error')}}
+
+// Create Order
+async function loadProducts(){var r=await API.get('/api/products?limit=100');_products=(await r.json()).data}
+function showCreateOrder(){_cart={};var h='<table><thead><tr><th>商品</th><th>价格</th><th>库存</th><th>数量</th></tr></thead><tbody>';_products.forEach(function(p){h+='<tr><td><strong>'+trunc(p.name,28)+'</strong> <span class="badge badge-info">'+p.category+'</span></td><td>'+formatMoney(p.price)+'</td><td>'+(p.stock<10?'<span style="color:var(--danger)">'+p.stock+'</span>':p.stock)+'</td><td><input type="number" min="0" max="'+p.stock+'" value="0" style="width:70px" onchange="updateCart(\''+p.id+'\','+p.price+',this.value)"></td></tr>'});h+='</tbody></table>';document.getElementById('create-items').innerHTML=h;document.getElementById('create-total').textContent='¥0.00';_cart={};showDlg('create-dialog')}
+function updateCart(pid,price,qty){qty=parseInt(qty)||0;if(qty>0)_cart[pid]=qty;else delete _cart[pid];var total=Object.entries(_cart).reduce(function(s,e){var p=_products.find(function(x){return x.id===e[0]});return s+(p?p.price*e[1]:0)},0);document.getElementById('create-total').textContent=formatMoney(total)}
+async function submitOrder(){var items=Object.entries(_cart).map(function(e){return{product_id:e[0],quantity:e[1]}});if(!items.length){toast('请至少选择一件商品','error');return}
+document.getElementById('btn-submit-order').disabled=true;document.getElementById('btn-submit-order').textContent='提交中...';
+try{var r=await API.post('/api/orders',{items:items});if(r.ok){var d=await r.json();toast('订单 '+d.id+' 创建成功，库存已扣减','success');hideDlg('create-dialog');load()}else{var d=await r.json();toast(d.detail||'创建失败','error')}}catch(e){toast(e.message,'error');document.getElementById('btn-submit-order').disabled=false;document.getElementById('btn-submit-order').textContent='提交订单'}}
+
+function showDlg(id){document.getElementById(id).style.display='flex'}
+function hideDlg(id){document.getElementById(id).style.display='none'}
 </script>
 </body>
 </html>
