@@ -1631,7 +1631,17 @@ API列表:
                         yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                         return
                     buf = ""
-                    async for chunk in resp.aiter_text():
+                    import asyncio
+                    last_heartbeat = asyncio.get_event_loop().time()
+                    chunk_iter = resp.aiter_text().__aiter__()
+                    while True:
+                        try:
+                            chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=3.0)
+                        except asyncio.TimeoutError:
+                            yield f"data: {json.dumps({'t':'heartbeat'})}\n\n"
+                            continue
+                        except StopAsyncIteration:
+                            break
                         for line in chunk.split("\n"):
                             line = line.strip()
                             if line.startswith("data: ") and line != "data: [DONE]":
