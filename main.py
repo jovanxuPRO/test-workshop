@@ -401,6 +401,8 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
                       "layer": "L7",
                       "check": "all(r.status_code < 500 for r in rs)"})
     return extra
+
+def gen_code(plan):
     """Generate executable pytest test code from a test plan.
 
     Args:
