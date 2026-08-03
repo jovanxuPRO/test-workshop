@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>商品管理 — E-Commerce</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<nav class="nav">
+<a href="/" class="nav-brand">E-Commerce v2.0</a>
+<ul class="nav-links">
+<li><a href="/">Dashboard</a></li>
+<li><a href="/products" class="active">商品管理</a></li>
+<li><a href="/orders">订单管理</a></li>
+</ul>
+<div class="nav-user"><span id="nav-user-name"></span><button onclick="logout()">退出</button></div>
+</nav>
+<div class="container">
+<div class="card">
+<div class="card-header">
+<h2>商品列表</h2>
+<div class="flex">
+<input id="search" placeholder="搜索商品..." style="width:220px" oninput="load()">
+<select id="category" onchange="load()" style="width:140px"><option value="">全部分类</option><option>外设</option><option>显示</option><option>家具</option><option>配件</option></select>
+<button class="btn btn-primary" onclick="showDialog()">+ 新增商品</button>
+</div>
+</div>
+<table><thead><tr><th>ID</th><th>名称</th><th>分类</th><th>价格</th><th>库存</th><th>操作</th></tr></thead>
+<tbody id="product-list"></tbody></table>
+<div class="pagination" id="pagination"></div>
+</div>
+</div>
+<div class="dialog-overlay" id="dialog" style="display:none" onclick="if(event.target===this)hideDialog()">
+<div class="dialog">
+<h3 id="dialog-title">新增商品</h3>
+<input type="hidden" id="edit-id">
+<div class="form-group"><label>商品名称</label><input id="prod-name" placeholder="机械键盘 K8 Pro"></div>
+<div class="form-group"><label>价格 (元)</label><input id="prod-price" type="number" step="0.01" min="0.01" value="99"></div>
+<div class="form-group"><label>库存</label><input id="prod-stock" type="number" min="0" value="50"></div>
+<div class="form-group"><label>分类</label><select id="prod-category"><option>外设</option><option>显示</option><option>家具</option><option>配件</option><option>未分类</option></select></div>
+<div class="flex" style="justify-content:flex-end;gap:8px;margin-top:20px">
+<button class="btn btn-outline" onclick="hideDialog()">取消</button>
+<button class="btn btn-primary" id="btn-save" onclick="save()">保存</button>
+</div>
+</div>
+</div>
+<script src="/static/app.js"></script>
+<script>
+var _page=1,_total=0,_limit=20,_user={};
+checkAuth();_user=JSON.parse(localStorage.getItem('user')||'{}');load();
+async function load(){
+try{
+var params='?page='+_page+'&limit='+_limit;
+var s=document.getElementById('search').value,c=document.getElementById('category').value;
+if(s)params+='&search='+encodeURIComponent(s);
+if(c)params+='&category='+encodeURIComponent(c);
+var r=await API.get('/api/products'+params);
+var d=await r.json();_total=d.total;
+var rows='';
+d.data.forEach(function(p){rows+='<tr><td style="font-family:monospace;font-size:11px">'+p.id+'</td><td><strong>'+trunc(p.name,30)+'</strong></td><td><span class="badge badge-info">'+p.category+'</span></td><td style="font-weight:600">'+formatMoney(p.price)+'</td><td>'+(p.stock<20?'<span style="color:var(--danger);font-weight:600">'+p.stock+'</span>':p.stock)+'</td><td class="flex">'+
+(_user.role!=='viewer'?'<button class="btn btn-outline btn-sm" onclick="editProduct(\''+p.id+'\')">编辑</button>'+(_user.role==='admin'?'<button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="delProduct(\''+p.id+'\')">删除</button>':''):'')
++'</td></tr>'});document.getElementById('product-list').innerHTML=rows||'<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">暂无商品</td></tr>';
+renderPagination();
+}catch(e){if(e.message!=='401')console.error(e)}
+}
+function renderPagination(){var pages=Math.ceil(_total/_limit),h='';if(pages<=1)return;for(var i=1;i<=pages;i++)h+='<button class="'+(i===_page?'active':'')+'" onclick="_page='+i+';load()">'+i+'</button>';document.getElementById('pagination').innerHTML=h}
+function showDialog(id){document.getElementById('dialog').style.display='flex';document.getElementById('dialog-title').textContent=id?'编辑商品':'新增商品';if(!id){document.getElementById('edit-id').value='';document.getElementById('prod-name').value='';document.getElementById('prod-price').value='99';document.getElementById('prod-stock').value='50';document.getElementById('prod-category').value='未分类'}}
+function hideDialog(){document.getElementById('dialog').style.display='none'}
+async function editProduct(id){showDialog(id);try{var r=await API.get('/api/products/'+id);var p=await r.json();document.getElementById('edit-id').value=p.id;document.getElementById('prod-name').value=p.name;document.getElementById('prod-price').value=p.price;document.getElementById('prod-stock').value=p.stock;document.getElementById('prod-category').value=p.category}catch(e){}}
+async function save(){
+var id=document.getElementById('edit-id').value;
+var body={name:document.getElementById('prod-name').value,price:parseFloat(document.getElementById('prod-price').value),stock:parseInt(document.getElementById('prod-stock').value),category:document.getElementById('prod-category').value};
+try{var r;if(id){r=await API.put('/api/products/'+id,body)}else{r=await API.post('/api/products',body)}
+if(r.ok){hideDialog();load();toast(id?'已更新':'已创建','success')}else{var d=await r.json();toast(d.detail||'操作失败','error')}}catch(e){toast(e.message,'error')}
+}
+async function delProduct(id){if(!confirm('确定删除商品 '+id+'?'))return;try{await API.del('/api/products/'+id);load();toast('已删除','success')}catch(e){toast(e.message,'error')}}
+</script>
+</body>
+</html>

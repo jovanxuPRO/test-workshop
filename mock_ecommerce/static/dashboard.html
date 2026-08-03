@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard — E-Commerce Order System</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<nav class="nav">
+<a href="/" class="nav-brand">E-Commerce v2.0</a>
+<ul class="nav-links">
+<li><a href="/" class="active">Dashboard</a></li>
+<li><a href="/products">商品管理</a></li>
+<li><a href="/orders">订单管理</a></li>
+</ul>
+<div class="nav-user"><span id="nav-user-name"></span><button onclick="logout()">退出</button></div>
+</nav>
+<div class="container">
+<div class="stats-grid" id="stats-grid"></div>
+<div class="card">
+<div class="card-header"><h2>订单状态分布</h2></div>
+<div id="status-chart" style="display:flex;gap:8px;height:40px;align-items:end"></div>
+</div>
+</div>
+<script src="/static/app.js"></script>
+<script>
+checkAuth();
+async function load(){
+try{
+var r=await API.get('/api/stats');
+var d=await r.json();
+var h='';
+h+=s('总商品',d.total_products,'件');
+h+=s('总订单',d.total_orders,'单');
+h+=s('总收入',formatMoney(d.total_revenue),'');
+h+=s('待退款',d.pending_refunds,'单 / '+formatMoney(d.pending_refund_amount));
+h+=s('低库存',d.low_stock_products.length,'件商品');
+document.getElementById('stats-grid').innerHTML=h;
+var chart='',max=Math.max(...Object.values(d.orders_by_status),1);
+var colors={created:'#93C5FD',confirmed:'#60A5FA',paid:'#3B82F6',shipped:'#8B5CF6',delivered:'#059669',cancelled:'#9CA3AF'};
+Object.entries(d.orders_by_status).forEach(function(e){
+var pct=Math.round(e[1]/max*100);
+chart+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px"><div style="background:'+(colors[e[0]]||'#E2E8F0')+';width:100%;height:'+pct+'%;border-radius:4px 4px 0 0;min-height:4px"></div><span style="font-size:10px;color:#64748B">'+e[0]+'</span><span style="font-size:12px;font-weight:600">'+e[1]+'</span></div>';
+});
+document.getElementById('status-chart').innerHTML=chart;
+}catch(e){if(e.message!=='401')console.error(e)}
+}
+function s(l,v,sub){return'<div class="stat-card"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="sub">'+sub+'</div></div>'}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>登录 — E-Commerce Order System</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-page">
+<div class="login-card">
+<h1>E-Commerce</h1>
+<p>企业订单管理系统 v2.0</p>
+<div class="form-group"><label>用户名</label><input id="username" value="admin" autocomplete="off"></div>
+<div class="form-group"><label>密码</label><input id="password" type="password" value="Admin@123"></div>
+<button class="btn btn-primary" onclick="login()" style="width:100%;justify-content:center;padding:12px">登 录</button>
+<p style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-muted)">
+预置账号: admin/Admin@123 &middot; operator/Oper@123 &middot; viewer/View@123
+</p>
+</div>
+<script>
+async function login(){
+var u=document.getElementById('username').value,p=document.getElementById('password').value;
+try{
+var r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+var d=await r.json();
+if(!r.ok) throw new Error(d.detail||'登录失败');
+localStorage.setItem('token',d.token);
+localStorage.setItem('user',JSON.stringify(d.user));
+window.location='/';
+}catch(e){alert(e.message)}
+}
+</script>
+</body>
+</html>
