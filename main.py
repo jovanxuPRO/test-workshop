@@ -490,8 +490,13 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
     cf += '@pytest.fixture\n'
     cf += 'def page(browser):\n'
     cf += '    ctx = browser.new_context()\n'
+    cf += '    if os.environ.get("TW_TRACE", "").lower() == "true":\n'
+    cf += '        ctx.tracing.start(screenshots=True, snapshots=True, sources=True)\n'
     cf += '    pg = ctx.new_page(); pg.set_default_timeout(20000)\n'
-    cf += '    yield pg; ctx.close()\n'
+    cf += '    yield pg\n'
+    cf += '    if os.environ.get("TW_TRACE", "").lower() == "true":\n'
+    cf += '        ctx.tracing.stop(path="trace.zip")\n'
+    cf += '    ctx.close()\n'
     with open(os.path.join(out, "conftest.py"), "w", encoding="utf-8") as f:
         f.write(cf)
 
@@ -714,6 +719,19 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
             lines.append(f'        page.wait_for_timeout(3000)')
             lines.append(f'        assert len(failed)==0, f"Failed resources: {{failed}}"')
             lines.append("")
+            # Test 7: screenshot capture at 3 breakpoints
+            lines.append(f"    def test_7_screenshots(self,page):")
+            lines.append(f'        """多分辨率截图对比"""')
+            lines.append(f'        import os, uuid')
+            lines.append(f'        ss_dir = os.path.join(os.path.dirname(__file__), "screenshots")')
+            lines.append(f'        os.makedirs(ss_dir, exist_ok=True)')
+            lines.append(f'        for name, w, h in [("desktop",1280,720),("tablet",768,1024),("mobile",375,812)]:')
+            lines.append(f'            page.set_viewport_size({{"width":w,"height":h}})')
+            lines.append(f'            page.goto(B+"{u}")')
+            lines.append(f'            page.wait_for_timeout(500)')
+            lines.append(f'            page.screenshot(path=os.path.join(ss_dir,f"{{name}}_{{w}}x{{h}}.png"), full_page=False)')
+            lines.append(f'        assert page.locator("body").is_visible()')
+            lines.append("")
         with open(os.path.join(out, "test_ui.py"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
@@ -729,6 +747,18 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
             lines.append(f'        """{dr}"""')
             lines.append(f'        resp = c.get("{tp}")')
             lines.append('        assert resp.status_code < 500')
+            lines.append("")
+        # Data integrity: cross-API consistency check
+        if len(apis) >= 2:
+            lines.append("    def test_integrity_cross_api(self):")
+            lines.append('        """数据完整性: 订单金额=商品单价×数量之和"""')
+            lines.append('        import json')
+            lines.append('        r1 = httpx.get(B+"/api/orders", timeout=15)')
+            lines.append('        if r1.status_code == 200:')
+            lines.append('            orders = r1.json().get("data", r1.json())')
+            lines.append('            for o in orders[:3]:')
+            lines.append('                calc = sum(it.get("quantity",0)*it.get("unit_price",0) for it in o.get("items",[]))')
+            lines.append('                assert abs(calc - o.get("total",0)) < 0.02, f"Order {o.get(\"id\")} total mismatch"')
             lines.append("")
         with open(os.path.join(out, "test_data.py"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
