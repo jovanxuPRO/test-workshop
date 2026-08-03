@@ -1648,7 +1648,7 @@ async def _analyze_with_ai(text, model, base_url):
 }}
 
 只输出 JSON，不要解释、不要 markdown 包裹。"""
-    async with httpx.AsyncClient(timeout=90) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model": model, "messages": [{"role": "user", "content": prompt}],
@@ -1786,7 +1786,7 @@ async def _call_llm(apis, seed, model, base_url, context=None):
 3. 每个 API 端点至少 4 条用例，必须覆盖: 正常(200)、缺少必填参数(400)、非法值(400)、不存在资源(404)、可选安全场景(P2)
 4. ?= 标记的 query 参数请作为可选参数处理
 5. 不要问我任何问题，不要输出额外解释，只输出 JSON 行"""
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model":model,"messages":[{"role":"user","content":prompt}],
