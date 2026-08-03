@@ -1001,7 +1001,7 @@ async def stream(request: Request):
     try:
         d, auth_env = gen_code(plan)
     except Exception:
-        logger.error("gen_code failed in stream", exc_info=_DEBUG)
+        logger.error("gen_code failed in stream", exc_info=True)
         PLANS.pop(pid, None)
         async def e():
             yield f"data: {json.dumps({'t':'error','msg':'Code generation failed'})}\n\n"
