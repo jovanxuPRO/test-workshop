@@ -1530,30 +1530,42 @@ def load_prd(file: str = ""):
 
 async def _analyze_with_ai(text, model, base_url):
     import httpx, random
-    prompt = f"""你是资深系统分析师。从以下业务文档中提取结构化信息，直接输出 JSON（不要 markdown）：
+    prompt = f"""你是资深系统分析师和测试架构师。请仔细阅读以下 PRD/业务文档，提取所有可用于生成测试用例的结构化信息。
 
-{text[:8000]}
+=== 分析要求 ===
+1. entities: 从文档中提取所有业务实体。每个实体需列出其字段名（从API定义、数据表格、字段描述中归纳）。注意区分实体名 vs API路径名（如 /api/orders 的实体是"订单"不是"orders"）。
+2. relations: 分析实体间的关联关系（如订单属于用户、订单包含商品）。
+3. state_machine: 如果文档描述了状态流转（如订单 created→paid→shipped），提取完整状态机。
+4. business_rules: 提取所有编号化的业务规则、约束条件、验证规则。每条规则用一句话完整描述，包含触发条件和预期行为。
 
-输出格式：
+特别注意：
+- "价格必须 > 0" 这类规则要同时标记对应的实体
+- PRD 中标注为 "严重" 级别的规则优先提取
+- 如果文档有多份 PRD（用 --- 分隔），分别提取后合并去重
+- 状态机的 states 列出所有可能状态，transitions 列出所有合法转换
+
+### 文档内容 ###
+{text[:12000]}
+
+### 输出（纯 JSON，不要 markdown） ###
 {{
-  "entities": [{{"name":"用户","fields":["id","username","email","role"],"constraints":["username唯一","email格式"]}}],
-  "relations": [{{"from":"用户","to":"任务","type":"1对多","via":"userId"}}],
-  "state_machine": [{{"entity":"任务","states":["todo","in_progress","done"],"transitions":["todo→in_progress","in_progress→done"]}}],
-  "business_rules": ["订单金额>=0","删除用户前检查关联任务","email全局唯一"]
+  "entities": [{{"name":"商品","fields":["name","price","stock","category"]}}],
+  "relations": [{{"from":"订单","to":"商品","type":"多对多","via":"order_items"}}],
+  "state_machine": [{{"entity":"订单","states":["created","paid","shipped","delivered"],"transitions":["created→paid","paid→shipped","shipped→delivered"]}}],
+  "business_rules": ["商品价格必须>0","创建订单时自动扣减库存","paid之后不可取消只能退款"]
 }}
 
-只输出 JSON，不要解释。"""
+只输出 JSON，不要解释、不要 markdown 包裹。"""
     async with httpx.AsyncClient(timeout=90) as client:
         r = await client.post(f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {_ai_key}"},
             json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.3, "max_tokens": 4000})
+                  "temperature": 0.2, "max_tokens": 6000})
         if r.status_code != 200:
             raise Exception(f"AI API {r.status_code}")
         content = r.json()["choices"][0]["message"]["content"].strip()
         if not content:
             return None
-        # Extract JSON from response
         s, e = content.find("{"), content.rfind("}")
         if s >= 0 and e > s:
             return json.loads(content[s:e+1])
@@ -1561,28 +1573,80 @@ async def _analyze_with_ai(text, model, base_url):
 
 
 def _analyze_with_heuristic(text):
-    """Regex-based heuristic extraction for when AI is unavailable."""
-    entities, relations, rules = [], [], []
-    # Extract capitalized Chinese/English entity names
+    """Smart heuristic extraction for PRD-style documents when AI is unavailable."""
     import re
-    for m in re.finditer(r'(?:实体|对象|表|资源)[：:]\s*(\S+)', text):
-        entities.append({"name": m.group(1), "fields": [], "constraints": []})
-    for m in re.finditer(r'(?:API|接口|端点)\s*[:：/]\s*(\S+)', text):
-        name = m.group(1).strip("/")
-        if not any(e["name"] == name for e in entities):
-            entities.append({"name": name, "fields": [], "constraints": []})
+    entities, relations, rules, state_machines = [], [], [], []
+
+    # 1) Extract entities from section headers, API paths, and table descriptions
+    seen_entities = set()
+    for m in re.finditer(r'(?:##\s*|#\s*)(?:\d+\.?\s*)?(.+?)(?:管理|模块|功能|接口|API|列表|信息)(?:\s*$|\n)', text):
+        name = m.group(1).strip()
+        name = {"products":"商品","orders":"订单","refunds":"退款","users":"用户","auth":"登录认证","stats":"数据统计"}.get(name.lower(), name)
+        if len(name) < 15 and name not in seen_entities:
+            seen_entities.add(name)
+            entities.append({"name": name, "fields": []})
+
+    # Also extract from /api/ paths
+    for m in re.finditer(r'/api/(\w+)', text):
+        name = m.group(1)
+        name = {"products":"商品","orders":"订单","refunds":"退款","users":"用户","auth":"登录认证","stats":"数据统计"}.get(name, name)
+        if name not in seen_entities and len(name) < 15:
+            seen_entities.add(name)
+            entities.append({"name": name, "fields": []})
+
     if not entities:
-        entities = [{"name": "资源", "fields": [], "constraints": []}]
-    # Extract rules
-    for line in text.split("\n"):
-        line = line.strip()
-        if re.search(r'(?:必须|禁止|不能|应|须|>=|<=|!=|正则|unique|唯一|必填)', line):
-            rules.append(line[:200])
+        entities = [{"name": "资源", "fields": []}]
+
+    # Extract fields from tables (| name | type | ...)
+    for ent in entities:
+        fields = []
+        pos = text.find(ent["name"])
+        if pos < 0: continue
+        section = text[pos:pos+1500]
+        for fm in re.finditer(r'\|\s*`?(\w+)`?\s*\|', section):
+            f = fm.group(1)
+            if f.lower() not in ('字段','名称','类型','说明','field','name','type','desc','-','--','编号','id','规则','规则编号'):
+                fields.append(f)
+        ent["fields"] = list(dict.fromkeys(fields))[:10]  # dedup
+
+    # 2) Extract business rules
+    seen_rules = set()
+    for m in re.finditer(r'[Rr]\d+[:：\s]+(.+?)(?:\n|$)', text):
+        r = m.group(1).strip().rstrip('。；;')
+        if len(r) > 4 and r not in seen_rules:
+            seen_rules.add(r); rules.append(r)
+    for m in re.finditer(r'(?:必须|禁止|不能|不可|应|须|仅|只能)\s*(.+?)(?:[。\n]|$)', text):
+        r = m.group(0).strip().rstrip('。；;')
+        if len(r) > 5 and r not in seen_rules:
+            seen_rules.add(r); rules.append(r)
+    # If no numbered rules found, extract from table rows
+    for m in re.finditer(r'\|\s*[Rr]\d+\s*\|\s*(.+?)\s*\|', text):
+        r = m.group(1).strip()
+        if len(r) > 4 and r not in seen_rules:
+            seen_rules.add(r); rules.append(r)
+
+    # 3) Extract state machines
+    sm_texts = re.findall(r'(?:状态流转|状态机|生命周期)[：:\s]*([\s\S]*?)(?=\n##|\n# |\n---|\Z)', text)
+    for section in sm_texts:
+        states = list(set(re.findall(r'(?:created|confirmed|paid|shipped|delivered|cancelled|pending|approved|rejected|todo|in_progress|done|draft|active|inactive)', section, re.IGNORECASE)))
+        trans = re.findall(r'(\w+)\s*[→\-–>]\s*(\w+)', section)
+        trans_list = [f"{a}→{b}" for a, b in trans]
+        if states:
+            sm = {"entity": "", "states": states, "transitions": trans_list}
+            ctx = text[max(0, text.find(section)-200):text.find(section)]
+            em = re.search(r'(?:订单|任务|退款|商品|用户)', ctx)
+            if em: sm["entity"] = em.group(0)
+            state_machines.append(sm)
+
+    # 4) Extract relations from foreign key patterns
+    for m in re.finditer(r'(?:关联|引用|外键|指向|属于)\s*(\w+)(?:的)?\s*(\w+)[_ ]?(?:ID|id)', text):
+        relations.append({"from": m.group(1).strip(), "to": m.group(2).strip(), "type": "多对1", "via": ""})
+
     return {
-        "entities": entities[:10],
+        "entities": entities[:15],
         "relations": relations[:10],
-        "state_machine": [],
-        "business_rules": rules[:20]
+        "state_machine": state_machines[:5],
+        "business_rules": rules[:30]
     }
 
 
