@@ -1603,6 +1603,19 @@ API列表:
 
     async def event_stream():
         import random, httpx
+        if not is_safe_url(base_url):
+            yield f"data: {json.dumps({'t':'info','msg':'AI Base URL 被拒绝,使用模板'})}\n\n"
+            for s in _pattern_suggest(apis, seed):
+                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+            return
+        if not (_ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-"))):
+            yield f"data: {json.dumps({'t':'info','msg':'未配置AI Key,使用模板'})}\n\n"
+            for s in _pattern_suggest(apis, seed):
+                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+            return
+        yield f"data: {json.dumps({'t':'info','msg':'AI 正在生成用例...'})}\n\n"
         try:
             async with httpx.AsyncClient(timeout=120) as client:
                 async with client.stream("POST", f"{base_url}/chat/completions",
