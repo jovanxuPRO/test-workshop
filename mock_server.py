@@ -4,13 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
-import uvicorn, uuid, jwt
+import os, uvicorn, uuid, jwt
 from datetime import datetime, timedelta
 
 app = FastAPI(title="E-Commerce Order System v2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-JWT_SECRET = "enterprise-mock-secret-key-2026"
+JWT_SECRET = os.environ.get("JWT_SECRET", "enterprise-mock-secret-key-2026")
 JWT_ALGORITHM = "HS256"
 
 # ===== Data Store =====
@@ -314,7 +314,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0a0e27;
 </div>
 <script>
 var _token = '';
-function callAPI(m, path, btn, body) {
+async function callAPI(m, path, btn, body) {
 var res = document.getElementById('res-'+(path.includes('auth')?'auth':path.includes('product')?'products':path.includes('order')?'orders':'refunds'));
 res.style.display='block';res.className='result';res.textContent='请求中...';
 try {
