@@ -72,6 +72,8 @@ def transition_order(oid: str, body: StatusTransition, user = Depends(require_op
 def cancel_order(oid: str, user = Depends(require_operator)):
     o = next((x for x in _store["orders"] if x["id"] == oid), None)
     if not o: raise HTTPException(404, "订单不存在")
+    if user["role"] != "admin" and o["user_id"] != user["id"]:
+        raise HTTPException(403, "无权操作此订单")
     if o["status"] not in ("created", "confirmed"):
         raise HTTPException(400, f"订单状态为 [{o['status']}]，不可取消")
     for it in o["items"]:
