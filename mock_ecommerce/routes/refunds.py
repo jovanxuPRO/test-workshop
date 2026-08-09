@@ -37,7 +37,7 @@ def approve_refund(rid: str, user = Depends(require_admin)):
     if r["status"] != "pending": raise HTTPException(400, f"退款已{r['status']}")
     r["status"] = "approved"
     o = next((x for x in _store["orders"] if x["id"] == r["order_id"]), None)
-    if o:
+    if o and o["status"] in ("paid", "shipped"):
         o["status"] = "cancelled"
         for it in o.get("items", []):
             p = next((x for x in _store["products"] if x["id"] == it["product_id"]), None)

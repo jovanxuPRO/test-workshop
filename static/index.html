@@ -617,7 +617,7 @@ function loadHist() {
         var u = document.getElementById("p-url").value.trim()||"http://localhost";
         if (n) hist = [{name:n, url:u, apis:[], pages:[], rules:"", types:["api","ui","data"], auth:"none", time:new Date().toLocaleString()}];
     }
-    document.getElementById("hist-sel").innerHTML = '<option value="">-- 选择方案 --</option>' + hist.map((p,i) => `<option value="${i}">${p.name} (${p.url}) - ${p.time||''}</option>`).join("");
+    document.getElementById("hist-sel").innerHTML = '<option value="">-- 选择方案 --</option>' + hist.map((p,i) => `<option value="${i}">${he(p.name||'')} (${he(p.url||'')}) - ${he(p.time||'')}</option>`).join("");
     fetch('/api/history-data').then(r=>r.json()).then(d=>{
         const logs = d.history||[];
         const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
