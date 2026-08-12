@@ -1554,7 +1554,7 @@ async def ai_suggest(request: Request):
         body = await request.json()
         apis = body.get("apis", [])
         seed = body.get("seed", 0)
-        model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "deepseek-chat")
+        model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
         max_tokens = int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096"))
         base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         # Validate base_url to prevent key exfiltration
@@ -1720,7 +1720,7 @@ async def analyze_context(request: Request):
             return {"ok": False, "error": "请提供业务文档内容"}
         if len(text) > 50000:
             text = text[:50000]
-        model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "deepseek-chat")
+        model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
         base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         if not is_safe_url(base_url):
             return {"ok": False, "error": "AI Base URL 安全策略拒绝"}
