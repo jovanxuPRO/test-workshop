@@ -1596,7 +1596,7 @@ async def ai_suggest_stream(request: Request):
     prompt = f"""测试工程师。为每个API生成2条用例（1条正常+1条异常），直接输出JSON行：
 {api_lines}
 {ctx_block}
-格式: {{"title":"正常返回","priority":"P0","expected":"200","method":"GET","path":"/api/path"}}}
+格式: {{"title":"正常返回","priority":"P0","expected":"200","method":"GET","path":"/api/path"}}
 {{"title":"缺少参数","priority":"P1","expected":"400","method":"POST","path":"/api/path"}}
 每个端点2条，不要外层数组，不要markdown，不要steps字段。"""
 
