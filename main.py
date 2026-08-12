@@ -277,10 +277,16 @@ def _exact_test(method, path, title, entities=None):
         return ("boundary", stmt, "r.status_code in (400, 422) or r.status_code < 500")
     # Positive scenarios — only reached if no error keyword matched
     if any(kw in t for kw in ["创建","create","新增","add","注册"]):
-        stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"test-user",{json.dumps(f1)}:"test@example.com",{json.dumps(f3)}:"Test123!"}})'
+        if method in ("GET","HEAD","OPTIONS"):
+            stmt = f'c.request("{method}","{path}")'
+        else:
+            stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"test-user",{json.dumps(f1)}:"test@example.com",{json.dumps(f3)}:"Test123!"}})'
         return ("create_ok", stmt, "r.status_code in (200, 201)")
     if any(kw in t for kw in ["更新","update","修改","edit","replace"]):
-        stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"updated-name"}})'
+        if method in ("GET","HEAD","OPTIONS","DELETE"):
+            stmt = f'c.request("{method}","{path}")'
+        else:
+            stmt = f'c.{method.lower()}("{path}", json={{{json.dumps(f0)}:"updated-name"}})'
         return ("update_ok", stmt, "r.status_code in (200, 201, 204)")
     if any(kw in t for kw in ["删除","delete","remove"]):
         stmt = f'c.request("{method}","{path}")'
@@ -292,7 +298,10 @@ def _exact_test(method, path, title, entities=None):
         stmt = f'c.request("{method}","{path}?page=1&limit=10")' if method == "GET" else f'c.request("{method}","{path}")'
         return ("query_ok", stmt, "r.status_code == 200")
     if any(kw in t for kw in ["登录","login","auth"]):
-        stmt = f'c.{method.lower()}("{path}", json={{"username":"admin","password":"admin"}})'
+        if method in ("GET","HEAD","OPTIONS"):
+            stmt = f'c.request("{method}","{path}")'
+        else:
+            stmt = f'c.{method.lower()}("{path}", json={{"username":"admin","password":"admin"}})'
         return ("login_ok", stmt, "r.status_code in (200, 201)")
     if any(kw in t for kw in ["健康","health","状态","status","ping"]):
         stmt = f'c.request("{method}","{path}")'
@@ -399,7 +408,7 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         path_id = p.replace("/","_").strip("_")[:30]
         extra.append({"m": m, "p": p, "n": f"边界-并发10请求({path_id})",
                       "layer": "L7",
-                      "check": "all(r.status_code < 500 for r in rs)"})
+                      "check": "r.status_code < 500"})
     return extra
 
 def gen_code(plan):
