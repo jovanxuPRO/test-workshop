@@ -1644,15 +1644,16 @@ async def ai_suggest_stream(request: Request):
                     buf = ""
                     import asyncio
                     case_count = 0
-                    first_case_deadline = asyncio.get_event_loop().time() + 25
+                    first_case_deadline = asyncio.get_event_loop().time() + 90
                     last_heartbeat = asyncio.get_event_loop().time()
                     chunk_iter = resp.aiter_text().__aiter__()
                     while True:
                         try:
-                            chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=3.0)
+                            chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=5.0)
                         except asyncio.TimeoutError:
                             if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
-                                yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,切换模板'})}\n\n"
+                                logger.warning(f"AI first-case deadline exceeded, buf={buf[:300]!r}")
+                                yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,保留模板'})}\n\n"
                                 yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                                 return
                             yield f"data: {json.dumps({'t':'heartbeat'})}\n\n"
@@ -1660,7 +1661,8 @@ async def ai_suggest_stream(request: Request):
                         except StopAsyncIteration:
                             break
                         if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
-                            yield f"data: {json.dumps({'t':'info','msg':'AI 超时,保留模板用例'})}\n\n"
+                            logger.warning(f"AI first-case deadline exceeded, buf={buf[:300]!r}")
+                            yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,保留模板'})}\n\n"
                             yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                             return
                         for line in chunk.split("\n"):
@@ -1670,6 +1672,8 @@ async def ai_suggest_stream(request: Request):
                                     data = json.loads(line[6:])
                                     delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                                     buf += delta
+                                    if len(buf) < 200 and buf.strip():
+                                        logger.info(f"AI stream buf so far: {buf!r}")
                                     # Try to parse complete JSON objects from buffer
                                     while True:
                                         obj_start = buf.find("{")
