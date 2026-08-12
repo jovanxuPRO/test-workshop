@@ -1627,7 +1627,7 @@ async def ai_suggest_stream(request: Request):
             return
         yield f"data: {json.dumps({'t':'info','msg':'AI 正在生成用例...'})}\n\n"
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=60) as client:
                 async with client.stream("POST", f"{base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {_ai_key}"},
                     json={"model": model, "messages": [{"role": "user", "content": prompt}],
@@ -1642,12 +1642,20 @@ async def ai_suggest_stream(request: Request):
                         return
                     buf = ""
                     import asyncio
+                    case_count = 0
+                    first_case_deadline = asyncio.get_event_loop().time() + 25
                     last_heartbeat = asyncio.get_event_loop().time()
                     chunk_iter = resp.aiter_text().__aiter__()
                     while True:
                         try:
                             chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=3.0)
                         except asyncio.TimeoutError:
+                            if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
+                                yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,切换模板'})}\n\n"
+                                for s in _pattern_suggest(apis, seed):
+                                    yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+                                yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+                                return
                             yield f"data: {json.dumps({'t':'heartbeat'})}\n\n"
                             continue
                         except StopAsyncIteration:
@@ -1673,6 +1681,7 @@ async def ai_suggest_stream(request: Request):
                                         try:
                                             obj = json.loads(buf[obj_start:end+1])
                                             if isinstance(obj, dict) and "title" in obj:
+                                                case_count += 1
                                                 yield f"data: {json.dumps({'t':'case','case':obj,'source':'ai'})}\n\n"
                                         except json.JSONDecodeError:
                                             pass
