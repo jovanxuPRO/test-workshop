@@ -1555,7 +1555,7 @@ async def ai_suggest(request: Request):
         apis = body.get("apis", [])
         seed = body.get("seed", 0)
         model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
-        max_tokens = int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096"))
+    max_tokens = max(int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096")), 16000)
         base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         # Validate base_url to prevent key exfiltration
         if not is_safe_url(base_url):
@@ -1604,12 +1604,13 @@ async def ai_suggest_stream(request: Request):
         if rules:
             ctx_block = "\n业务规则（优先覆盖）:\n" + "\n".join(f"- {r if isinstance(r,str) else str(r)[:200]}" for r in rules[:10])
     api_lines = "\n".join(f"- {a.get('m','GET')} {a.get('p','/')} ({a.get('n','')})" for a in apis)
-    prompt = f"""测试工程师。为每个API生成2条用例（1条正常+1条异常），直接输出JSON行：
+    prompt = f"""直接输出测试用例JSON行，不要思考过程，不要解释。
+每个API生成2条用例（1正常+1异常）：
 {api_lines}
 {ctx_block}
 格式: {{"title":"正常返回","priority":"P0","expected":"200","method":"GET","path":"/api/path"}}
 {{"title":"缺少参数","priority":"P1","expected":"400","method":"POST","path":"/api/path"}}
-每个端点2条，不要外层数组，不要markdown，不要steps字段。"""
+每个端点2条，不要外层数组，不要markdown。"""
 
     async def event_stream():
         import random, httpx
@@ -1671,10 +1672,11 @@ async def ai_suggest_stream(request: Request):
                                 try:
                                     data = json.loads(line[6:])
                                     delta = data.get("choices", [{}])[0].get("delta", {})
-                                    # deepseek-v4-pro is a reasoning model: reasoning_content is thinking,
-                                    # the actual answer comes in content. Only parse content.
-                                    delta = delta.get("content", "") or ""
-                                    buf += delta
+                                    # Reasoning models: read BOTH — answer may be in either field.
+                                    # Dedupe overlap: prefer content, append reasoning only if content empty.
+                                    c = delta.get("content", "") or ""
+                                    r = delta.get("reasoning_content", "") or ""
+                                    buf += (c or r)
                                     if len(buf) < 200 and buf.strip():
                                         logger.info(f"AI stream buf so far: {buf!r}")
                                     # Try to parse complete JSON objects from buffer
