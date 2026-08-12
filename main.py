@@ -1671,8 +1671,9 @@ async def ai_suggest_stream(request: Request):
                                 try:
                                     data = json.loads(line[6:])
                                     delta = data.get("choices", [{}])[0].get("delta", {})
-                                    # Some models (deepseek-v4-pro) stream reasoning_content first, then content
-                                    delta = delta.get("content", "") or delta.get("reasoning_content", "") or ""
+                                    # deepseek-v4-pro is a reasoning model: reasoning_content is thinking,
+                                    # the actual answer comes in content. Only parse content.
+                                    delta = delta.get("content", "") or ""
                                     buf += delta
                                     if len(buf) < 200 and buf.strip():
                                         logger.info(f"AI stream buf so far: {buf!r}")
