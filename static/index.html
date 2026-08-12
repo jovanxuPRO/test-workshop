@@ -762,6 +762,7 @@ function previewCases() {
         for(var li=0;li<lines.length&&maxIter-->0;li++){var line=lines[li].trim();if(!line.startsWith('data: '))continue;
         try{var dd=JSON.parse(line.slice(6));}catch(e){continue;}
         if(dd.t==='info'){var pt=document.getElementById('ai-progress-text');if(pt)pt.textContent=dd.msg;}
+        else if(dd.t==='error'){var pt2=document.getElementById('ai-progress-text');if(pt2){pt2.textContent='❌ '+dd.msg;pt2.style.color='#ef5350';}}
         else if(dd.t==='heartbeat'){/* keep alive */}
         else if(dd.t==='clear'){suggestions=[];num=0;rows='';document.getElementById('case-preview-list').innerHTML='';}
         else if(dd.t==='case'){var s=dd.case;suggestions.push(s);num++;

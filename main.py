@@ -1615,21 +1615,14 @@ async def ai_suggest_stream(request: Request):
     async def event_stream():
         import random, httpx
         if not is_safe_url(base_url):
-            yield f"data: {json.dumps({'t':'info','msg':'AI Base URL 被拒绝,使用模板'})}\n\n"
-            for s in _pattern_suggest(apis, seed):
-                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
-            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'error','msg':'AI Base URL 被拒绝'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
             return
         if not (_ai_key and len(_ai_key) >= 20 and (_ai_key.startswith("sk-") or _ai_key.startswith("fk-") or _ai_key.startswith("ak-"))):
-            yield f"data: {json.dumps({'t':'info','msg':'未配置AI Key,使用模板'})}\n\n"
-            for s in _pattern_suggest(apis, seed):
-                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
-            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'error','msg':'未配置AI Key'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
             return
-        # Emit pattern cases IMMEDIATELY so user sees results without waiting
-        for s in _pattern_suggest(apis, seed):
-            yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
-        yield f"data: {json.dumps({'t':'info','msg':'模板用例已就绪,AI 正在优化...'})}\n\n"
+        yield f"data: {json.dumps({'t':'info','msg':'AI 正在生成用例...'})}\n\n"
         try:
             # Use NON-streaming call: reasoning models (deepseek-v4-pro) stream
             # reasoning_content for a long time before content — streaming parse fails.
@@ -1640,8 +1633,8 @@ async def ai_suggest_stream(request: Request):
                           "temperature": 0.8, "max_tokens": max_tokens})
                 if r.status_code != 200:
                     logger.warning(f"AI API error {r.status_code}")
-                    yield f"data: {json.dumps({'t':'info','msg':f'AI API {r.status_code},保留模板'})}\n\n"
-                    yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+                    yield f"data: {json.dumps({'t':'error','msg':f'AI API {r.status_code}'})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
                     return
                 content = r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or ""
                 logger.info(f"AI response received: {len(content)} chars, first 100: {content[:100]!r}")
@@ -1670,8 +1663,8 @@ async def ai_suggest_stream(request: Request):
                 if not cases:
                     raw_snippet = buf[:300].replace("\\", "\\\\").replace("\n", "\\n")
                     logger.warning(f"AI returned no parseable cases, content={raw_snippet!r}")
-                    yield f"data: {json.dumps({'t':'info','msg':f'AI 未产出有效用例,保留模板 (返回{len(buf)}字符: {raw_snippet[:150]})'})}\n\n"
-                    yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+                    yield f"data: {json.dumps({'t':'error','msg':f'AI 未产出有效用例 (返回{len(buf)}字符: {raw_snippet[:150]})'})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
                     return
                 yield f"data: {json.dumps({'t':'clear','source':'ai'})}\n\n"
                 for obj in cases:
@@ -1681,8 +1674,8 @@ async def ai_suggest_stream(request: Request):
         except Exception as e:
             en = type(e).__name__
             logger.warning(f"AI call failed: {en}")
-            yield f"data: {json.dumps({'t':'info','msg':f'AI异常({en}),保留模板'})}\n\n"
-            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'error','msg':f'AI异常({en})'})}\n\n"
+            yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
     return StreamingResponse(event_stream(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
