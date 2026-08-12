@@ -1555,7 +1555,7 @@ async def ai_suggest(request: Request):
         apis = body.get("apis", [])
         seed = body.get("seed", 0)
         model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
-    max_tokens = max(int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096")), 16000)
+        max_tokens = max(int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096")), 16000)
         base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
         # Validate base_url to prevent key exfiltration
         if not is_safe_url(base_url):
@@ -1595,7 +1595,7 @@ async def ai_suggest_stream(request: Request):
     apis = body.get("apis", [])
     seed = body.get("seed", 0)
     model = body.get("model", "") or os.environ.get("TW_AI_MODEL", "gpt-4o")
-    max_tokens = int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096"))
+    max_tokens = max(int(body.get("max_tokens", 0) or 0) or int(os.environ.get("TW_AI_MAX_TOKENS", "4096")), 16000)
     base_url = (body.get("base_url", "") or os.environ.get("TW_AI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
     ctx = body.get("context")
     ctx_block = ""
