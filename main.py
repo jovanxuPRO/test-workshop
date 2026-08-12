@@ -1631,89 +1631,56 @@ async def ai_suggest_stream(request: Request):
             yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
         yield f"data: {json.dumps({'t':'info','msg':'模板用例已就绪,AI 正在优化...'})}\n\n"
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                async with client.stream("POST", f"{base_url}/chat/completions",
+            # Use NON-streaming call: reasoning models (deepseek-v4-pro) stream
+            # reasoning_content for a long time before content — streaming parse fails.
+            async with httpx.AsyncClient(timeout=300) as client:
+                r = await client.post(f"{base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {_ai_key}"},
                     json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                          "temperature": 0.8, "max_tokens": max_tokens, "stream": True}) as resp:
-                    if resp.status_code != 200:
-                        body_text = await resp.aread()
-                        logger.warning(f"AI API error {resp.status_code}")
-                        yield f"data: {json.dumps({'t':'info','msg':f'AI API {resp.status_code},保留模板'})}\n\n"
-                        yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
-                        return
-                    buf = ""
-                    import asyncio
-                    case_count = 0
-                    first_case_deadline = asyncio.get_event_loop().time() + 90
-                    last_heartbeat = asyncio.get_event_loop().time()
-                    chunk_iter = resp.aiter_text().__aiter__()
-                    while True:
-                        try:
-                            chunk = await asyncio.wait_for(chunk_iter.__anext__(), timeout=5.0)
-                        except asyncio.TimeoutError:
-                            if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
-                                logger.warning(f"AI first-case deadline exceeded, buf={buf[:300]!r}")
-                                yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,保留模板'})}\n\n"
-                                yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
-                                return
-                            yield f"data: {json.dumps({'t':'heartbeat'})}\n\n"
-                            continue
-                        except StopAsyncIteration:
-                            break
-                        if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
-                            logger.warning(f"AI first-case deadline exceeded, buf={buf[:300]!r}")
-                            yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,保留模板'})}\n\n"
-                            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
-                            return
-                        for line in chunk.split("\n"):
-                            line = line.strip()
-                            if line.startswith("data: ") and line != "data: [DONE]":
-                                try:
-                                    data = json.loads(line[6:])
-                                    delta = data.get("choices", [{}])[0].get("delta", {})
-                                    # Reasoning models: read BOTH — answer may be in either field.
-                                    # Dedupe overlap: prefer content, append reasoning only if content empty.
-                                    c = delta.get("content", "") or ""
-                                    r = delta.get("reasoning_content", "") or ""
-                                    buf += (c or r)
-                                    if len(buf) < 200 and buf.strip():
-                                        logger.info(f"AI stream buf so far: {buf!r}")
-                                    # Try to parse complete JSON objects from buffer
-                                    while True:
-                                        obj_start = buf.find("{")
-                                        if obj_start < 0: break
-                                        depth = 0; end = -1
-                                        for i in range(obj_start, len(buf)):
-                                            if buf[i] == '{': depth += 1
-                                            elif buf[i] == '}':
-                                                depth -= 1
-                                                if depth == 0: end = i; break
-                                        if end < 0: break
-                                        try:
-                                            obj = json.loads(buf[obj_start:end+1])
-                                            if isinstance(obj, dict) and "title" in obj:
-                                                if case_count == 0:
-                                                    yield f"data: {json.dumps({'t':'clear','source':'ai'})}\n\n"
-                                                case_count += 1
-                                                yield f"data: {json.dumps({'t':'case','case':obj,'source':'ai'})}\n\n"
-                                        except json.JSONDecodeError:
-                                            pass
-                                        buf = buf[end+1:]
-                                except Exception:
-                                    pass
-                    if case_count == 0:
-                        raw_snippet = buf[:500].replace("\\", "\\\\").replace("\n", "\\n")
-                        logger.warning(f"AI stream ended with 0 cases, buf_len={len(buf)} buf={buf[:200]!r}")
-                        yield f"data: {json.dumps({'t':'info','msg':f'AI 未产出有效用例,保留模板 (返回{len(buf)}字符: {raw_snippet[:200]})'})}\n\n"
-                        yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
-                        return
-                    if buf.strip():
-                        yield f"data: {json.dumps({'t':'info','msg':'AI 生成完成'})}\n\n"
-                    yield f"data: {json.dumps({'t':'done','source':'ai'})}\n\n"
+                          "temperature": 0.8, "max_tokens": max_tokens})
+                if r.status_code != 200:
+                    logger.warning(f"AI API error {r.status_code}")
+                    yield f"data: {json.dumps({'t':'info','msg':f'AI API {r.status_code},保留模板'})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+                    return
+                content = r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+                logger.info(f"AI response received: {len(content)} chars, first 100: {content[:100]!r}")
+                buf = content
+                # Parse all complete JSON objects
+                import re
+                cases = []
+                obj_start = 0
+                while True:
+                    obj_start = buf.find("{", obj_start)
+                    if obj_start < 0: break
+                    depth = 0; end = -1
+                    for i in range(obj_start, len(buf)):
+                        if buf[i] == '{': depth += 1
+                        elif buf[i] == '}':
+                            depth -= 1
+                            if depth == 0: end = i; break
+                    if end < 0: break
+                    try:
+                        obj = json.loads(buf[obj_start:end+1])
+                        if isinstance(obj, dict) and "title" in obj:
+                            cases.append(obj)
+                    except json.JSONDecodeError:
+                        pass
+                    obj_start = end + 1
+                if not cases:
+                    raw_snippet = buf[:300].replace("\\", "\\\\").replace("\n", "\\n")
+                    logger.warning(f"AI returned no parseable cases, content={raw_snippet!r}")
+                    yield f"data: {json.dumps({'t':'info','msg':f'AI 未产出有效用例,保留模板 (返回{len(buf)}字符: {raw_snippet[:150]})'})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+                    return
+                yield f"data: {json.dumps({'t':'clear','source':'ai'})}\n\n"
+                for obj in cases:
+                    yield f"data: {json.dumps({'t':'case','case':obj,'source':'ai'})}\n\n"
+                yield f"data: {json.dumps({'t':'info','msg':f'AI 生成 {len(cases)} 条用例'})}\n\n"
+                yield f"data: {json.dumps({'t':'done','source':'ai'})}\n\n"
         except Exception as e:
             en = type(e).__name__
-            logger.warning(f"AI stream failed: {en}")
+            logger.warning(f"AI call failed: {en}")
             yield f"data: {json.dumps({'t':'info','msg':f'AI异常({en}),保留模板'})}\n\n"
             yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
     return StreamingResponse(event_stream(), media_type="text/event-stream",
