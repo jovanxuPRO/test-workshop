@@ -1168,15 +1168,17 @@ def report_count():
         t_val = ts.get("tests", "0")
         f_val = ts.get("failures", "0")
         e_val = ts.get("errors", "0")
+        s_val = ts.get("skipped", "0")
         t = int(t_val) if t_val.isdigit() else 0
         f = int(f_val) if f_val.isdigit() else 0
         e = int(e_val) if e_val.isdigit() else 0
+        s = int(s_val) if s_val.isdigit() else 0
     except (ET.ParseError, Exception):
         logger.warning(f"Corrupt results.xml: {xml_file}")
         return {"total": 0, "passed": 0, "failed": 0, "rate": 0}
-    p = t - f - e
+    p = t - f - e - s
     rate = round(p/t*100, 1) if t else 0
-    return {"total": t, "passed": p, "failed": f, "errors": e, "rate": rate}
+    return {"total": t, "passed": p, "failed": f, "errors": e, "skipped": s, "rate": rate}
 
 
 @app.get("/api/report-list")
