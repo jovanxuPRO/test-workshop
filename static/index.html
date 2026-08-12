@@ -762,6 +762,7 @@ function previewCases() {
         try{var dd=JSON.parse(line.slice(6));}catch(e){continue;}
         if(dd.t==='info'){var pt=document.getElementById('ai-progress-text');if(pt)pt.textContent=dd.msg;}
         else if(dd.t==='heartbeat'){/* keep alive */}
+        else if(dd.t==='clear'){suggestions=[];num=0;rows='';document.getElementById('case-preview-list').innerHTML='';}
         else if(dd.t==='case'){var s=dd.case;suggestions.push(s);num++;
         if(num===1)rows='<tr style="background:#e8eaf6"><td colspan="14" style="padding:4px 12px;font-size:11px;font-weight:700;color:#3949ab">🔌 API 接口测试</td></tr>';
         var lk=window._lockedCases&&window._lockedCases.includes('s_'+(num-1));

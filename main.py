@@ -1625,7 +1625,10 @@ async def ai_suggest_stream(request: Request):
                 yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
             yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
             return
-        yield f"data: {json.dumps({'t':'info','msg':'AI 正在生成用例...'})}\n\n"
+        # Emit pattern cases IMMEDIATELY so user sees results without waiting
+        for s in _pattern_suggest(apis, seed):
+            yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+        yield f"data: {json.dumps({'t':'info','msg':'模板用例已就绪,AI 正在优化...'})}\n\n"
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 async with client.stream("POST", f"{base_url}/chat/completions",
@@ -1635,9 +1638,7 @@ async def ai_suggest_stream(request: Request):
                     if resp.status_code != 200:
                         body_text = await resp.aread()
                         logger.warning(f"AI API error {resp.status_code}")
-                        yield f"data: {json.dumps({'t':'info','msg':f'AI API {resp.status_code},切换模板'})}\n\n"
-                        for s in _pattern_suggest(apis, seed):
-                            yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+                        yield f"data: {json.dumps({'t':'info','msg':f'AI API {resp.status_code},保留模板'})}\n\n"
                         yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                         return
                     buf = ""
@@ -1652,8 +1653,6 @@ async def ai_suggest_stream(request: Request):
                         except asyncio.TimeoutError:
                             if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
                                 yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,切换模板'})}\n\n"
-                                for s in _pattern_suggest(apis, seed):
-                                    yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
                                 yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                                 return
                             yield f"data: {json.dumps({'t':'heartbeat'})}\n\n"
@@ -1661,9 +1660,7 @@ async def ai_suggest_stream(request: Request):
                         except StopAsyncIteration:
                             break
                         if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
-                            yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,切换模板'})}\n\n"
-                            for s in _pattern_suggest(apis, seed):
-                                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+                            yield f"data: {json.dumps({'t':'info','msg':'AI 超时,保留模板用例'})}\n\n"
                             yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                             return
                         for line in chunk.split("\n"):
@@ -1687,6 +1684,8 @@ async def ai_suggest_stream(request: Request):
                                         try:
                                             obj = json.loads(buf[obj_start:end+1])
                                             if isinstance(obj, dict) and "title" in obj:
+                                                if case_count == 0:
+                                                    yield f"data: {json.dumps({'t':'clear','source':'ai'})}\n\n"
                                                 case_count += 1
                                                 yield f"data: {json.dumps({'t':'case','case':obj,'source':'ai'})}\n\n"
                                         except json.JSONDecodeError:
@@ -1696,9 +1695,7 @@ async def ai_suggest_stream(request: Request):
                                     pass
                     if case_count == 0:
                         logger.warning(f"AI stream ended with 0 cases, buf={buf[:200]!r}")
-                        yield f"data: {json.dumps({'t':'info','msg':'AI 未产出有效用例,切换模板'})}\n\n"
-                        for s in _pattern_suggest(apis, seed):
-                            yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+                        yield f"data: {json.dumps({'t':'info','msg':'AI 未产出有效用例,保留模板'})}\n\n"
                         yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                         return
                     if buf.strip():
@@ -1707,9 +1704,7 @@ async def ai_suggest_stream(request: Request):
         except Exception as e:
             en = type(e).__name__
             logger.warning(f"AI stream failed: {en}")
-            yield f"data: {json.dumps({'t':'info','msg':f'AI超时,切换模板'})}\n\n"
-            for s in _pattern_suggest(apis, seed):
-                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+            yield f"data: {json.dumps({'t':'info','msg':f'AI异常({en}),保留模板'})}\n\n"
             yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
     return StreamingResponse(event_stream(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
