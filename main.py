@@ -1670,7 +1670,9 @@ async def ai_suggest_stream(request: Request):
                             if line.startswith("data: ") and line != "data: [DONE]":
                                 try:
                                     data = json.loads(line[6:])
-                                    delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    delta = data.get("choices", [{}])[0].get("delta", {})
+                                    # Some models (deepseek-v4-pro) stream reasoning_content first, then content
+                                    delta = delta.get("content", "") or delta.get("reasoning_content", "") or ""
                                     buf += delta
                                     if len(buf) < 200 and buf.strip():
                                         logger.info(f"AI stream buf so far: {buf!r}")
@@ -1698,8 +1700,9 @@ async def ai_suggest_stream(request: Request):
                                 except Exception:
                                     pass
                     if case_count == 0:
-                        logger.warning(f"AI stream ended with 0 cases, buf={buf[:200]!r}")
-                        yield f"data: {json.dumps({'t':'info','msg':'AI 未产出有效用例,保留模板'})}\n\n"
+                        raw_snippet = buf[:500].replace("\\", "\\\\").replace("\n", "\\n")
+                        logger.warning(f"AI stream ended with 0 cases, buf_len={len(buf)} buf={buf[:200]!r}")
+                        yield f"data: {json.dumps({'t':'info','msg':f'AI 未产出有效用例,保留模板 (返回{len(buf)}字符: {raw_snippet[:200]})'})}\n\n"
                         yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
                         return
                     if buf.strip():
