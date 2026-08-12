@@ -1660,6 +1660,12 @@ async def ai_suggest_stream(request: Request):
                             continue
                         except StopAsyncIteration:
                             break
+                        if case_count == 0 and asyncio.get_event_loop().time() > first_case_deadline:
+                            yield f"data: {json.dumps({'t':'info','msg':'AI 首条用例超时,切换模板'})}\n\n"
+                            for s in _pattern_suggest(apis, seed):
+                                yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+                            yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+                            return
                         for line in chunk.split("\n"):
                             line = line.strip()
                             if line.startswith("data: ") and line != "data: [DONE]":
@@ -1688,6 +1694,13 @@ async def ai_suggest_stream(request: Request):
                                         buf = buf[end+1:]
                                 except Exception:
                                     pass
+                    if case_count == 0:
+                        logger.warning(f"AI stream ended with 0 cases, buf={buf[:200]!r}")
+                        yield f"data: {json.dumps({'t':'info','msg':'AI 未产出有效用例,切换模板'})}\n\n"
+                        for s in _pattern_suggest(apis, seed):
+                            yield f"data: {json.dumps({'t':'case','case':s,'source':'pattern'})}\n\n"
+                        yield f"data: {json.dumps({'t':'done','source':'pattern'})}\n\n"
+                        return
                     if buf.strip():
                         yield f"data: {json.dumps({'t':'info','msg':'AI 生成完成'})}\n\n"
                     yield f"data: {json.dumps({'t':'done','source':'ai'})}\n\n"
