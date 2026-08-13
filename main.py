@@ -260,12 +260,12 @@ def _exact_test(method, path, title, entities=None):
         if method in ("POST", "PUT", "PATCH"):
             stmt = f'c.{method.lower()}("{path}", json={{"q":"<script>alert(1)</script>"}})'
         return ("xss", stmt, 'r.status_code >= 400 or "<script>" not in r.text')
-    if any(kw in t for kw in ["缺少","必填","缺失","空","empty"]):
-        stmt = f'c.request("{method}","{path}")' if method != "POST" else f'c.post("{path}")'
-        return ("missing_field", stmt, "r.status_code in (400, 422, 401)")
     if any(kw in t for kw in ["未认证","未授权","无权限","unauth","token","forbidden","无认证"]):
         stmt = f'c.request("{method}","{path}", headers={{"Authorization":""}})'
         return ("unauthorized", stmt, "r.status_code in (401, 403)")
+    if any(kw in t for kw in ["缺少","必填","缺失","空","empty"]):
+        stmt = f'c.request("{method}","{path}")' if method != "POST" else f'c.post("{path}")'
+        return ("missing_field", stmt, "r.status_code in (400, 422, 401)")
     if any(kw in t for kw in ["不存在","404","not found","找不到"]):
         stmt = f'c.request("{method}","{path}")'
         return ("not_found", stmt, "r.status_code in (404, 400)")
@@ -348,39 +348,44 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         rl = rule.lower()
         for api in apis:
             p = api.get("p", ""); m = api.get("m", "GET")
-            # Money/amount >= 0 or stock constraint
+            # Money/amount >= 0 or stock constraint — only applies to POST endpoints
             if any(w in rl for w in ["金额", "amount", "price", "价格", "库存", "stock", ">=0", "非负", "不能为负", "必须>0"]):
+                if m != "POST": continue
                 extra.append({"m":"POST","p":p,"n":f"业务规则-{rule[:50]}→负数拒绝","layer":"L3",
-                    "payload":'{"amount":-1,"stock":-5}',"check":"r.status_code in (400, 422)"})
+                    "payload":'{"name":"test","price":-1,"stock":-5}',"check":"r.status_code in (400, 422)"})
             # Unique constraint
             elif any(w in rl for w in ["唯一", "unique", "重复", "已存在"]):
                 for ename in entity_map:
-                    if ename and ename in p.lower():
+                    if ename and ename in p.lower() and m == "POST":
                         extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:50]}",
-                                      "layer": "L3", "payload": '{"'+ (entity_map[ename][0] if entity_map[ename] else 'name') +'":"dup-test-001"}',
+                                      "layer": "L3", "payload": '{"'+ (entity_map[ename][0] if entity_map[ename] else 'name') +'":"dup-test-001","price":1,"stock":1}',
                                       "check": "r.status_code in (200, 201, 400, 409)"})
                         break
-            # Permission/auth rules
+            # Permission/auth rules — applies to all
             elif any(w in rl for w in ["管理员", "admin", "权限", "普通用户", "only admin", "无权", "只能看", "越权"]):
                 extra.append({"m": m, "p": p, "n": f"业务规则-{rule[:50]}",
                               "layer": "L3", "check": "r.status_code in (200, 401, 403)"})
-            # State/status transition constraint
+            # State/status transition constraint — use POST cancel/delete variant
             elif any(w in rl for w in ["不可取消", "only created", "不能取消", "不允许", "之后不可", "can't cancel"]):
-                extra.append({"m": "DELETE", "p": p.replace("/{id}", "/999999"),
+                if m != "GET": continue
+                extra.append({"m": "POST", "p": p.replace("/{id}", "/999999") + "/cancel",
                               "n": f"业务规则-{rule[:50]}", "layer": "L3",
                               "check": "r.status_code in (400, 404)"})
-            # Required field / not null
+            # Required field / not null — only POST endpoints
             elif any(w in rl for w in ["必填", "required", "不能为空", "not null", "缺少"]):
+                if m != "POST": continue
                 extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:50]}→空字段拒绝",
                               "layer": "L3", "payload": '{"name":""}',
                               "check": "r.status_code in (400, 422)"})
-            # Amount limit / maximum
+            # Amount limit / maximum — only POST endpoints
             elif any(w in rl for w in ["超过", "不能超过", "exceed", "上限", "最多"]):
+                if m != "POST": continue
                 extra.append({"m": "POST", "p": p, "n": f"业务规则-{rule[:50]}→超限拒绝",
-                              "layer": "L3", "payload": '{"amount":99999999}',
+                              "layer": "L3", "payload": '{"name":"test","price":99999999}',
                               "check": "r.status_code in (400, 422)"})
-            # General must/should/auto rules
+            # General must/should/auto rules — GET endpoints only
             elif any(w in rl for w in ["必须", "must", "shall", "应", "自动", "auto"]):
+                if m != "GET": continue
                 extra.append({"m": m, "p": p, "n": f"业务规则-{rule[:50]}",
                               "layer": "L3", "check": "r.status_code < 500"})
     # L4: State machine tests
@@ -404,13 +409,16 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
                 extra.append({"m": "sequence", "p": create_ep, "n": seq_title,
                               "layer": "L4", "steps": [create_ep, list_ep, create_ep],
                               "check": "r.status_code < 500"})
-    # L6: Security injection enhancement
+    # L6: Security injection enhancement — skip public endpoints (login)
     for api in apis:
         p = api.get("p", ""); m = api.get("m", "GET")
+        pl = p.lower()
+        if "/login" in pl or "/auth" in pl and "/login" in pl:
+            continue  # login endpoint is public by design
         path_id = p.replace("/","_").strip("_")[:30]
         extra.append({"m": m, "p": p, "n": f"安全-越权访问({path_id})",
                       "layer": "L6",
-                      "check": "r.status_code in (200, 401, 403)"})
+                      "check": "r.status_code in (401, 403)"})
     # L7: Boundary / concurrency
     for api in apis:
         p = api.get("p", ""); m = api.get("m", "GET")
