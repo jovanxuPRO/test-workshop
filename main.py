@@ -1615,7 +1615,11 @@ async def ai_suggest(request: Request):
             try:
                 results = await _call_llm(apis, seed, model, base_url, body.get("context"), max_tokens)
                 if results is not None and len(results) > 0:
-                    return {"suggestions": results, "source": "ai"}
+                    valid, rejected = _validate_cases(results, apis)
+                    if valid:
+                        return {"suggestions": valid, "source": "ai",
+                                "ai_error": f"筛查剔除{len(rejected)}条" if rejected else ""}
+                    return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": f"AI 用例未通过筛查({len(rejected)}条)"}
                 elif results is not None:
                     return {"suggestions": _pattern_suggest(apis, seed), "source": "pattern", "ai_error": "AI 返回了空列表"}
             except Exception as e:
@@ -1630,6 +1634,51 @@ async def ai_suggest(request: Request):
     except Exception as e:
         logger.error(f"ai-suggest crashed: {e}", exc_info=_DEBUG)
         return {"suggestions": [], "source": "error", "ai_error": str(e)[:200]}
+
+
+def _validate_cases(raw_cases, apis=None):
+    """Screen and normalize AI-generated cases.
+    Returns (valid_cases, rejected_reasons)."""
+    VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+    valid, rejected = [], []
+    seen = set()
+    configured_paths = set()
+    if apis:
+        for a in apis:
+            p = str(a.get("p", "")).split("?")[0].rstrip("/")
+            if p: configured_paths.add(p.lower())
+    for obj in raw_cases:
+        if not isinstance(obj, dict):
+            rejected.append("非对象"); continue
+        title = str(obj.get("title", "")).strip()
+        if not title:
+            rejected.append("缺title"); continue
+        if len(title) > 200:
+            title = title[:200]
+        method = str(obj.get("method", "")).strip().upper()
+        if method not in VALID_METHODS:
+            rejected.append(f"非法方法 {method or '空'}"); continue
+        path = str(obj.get("path", "")).strip()
+        if not path:
+            rejected.append("缺path"); continue
+        if not (path.startswith("/") or path.startswith("http")):
+            rejected.append(f"path格式错误 {path[:30]}"); continue
+        priority = str(obj.get("priority", "P1")).strip().upper()
+        if priority not in ("P0", "P1", "P2"):
+            priority = "P1"
+        key = (method, path, title)
+        if key in seen:
+            rejected.append(f"重复用例 {title[:30]}"); continue
+        seen.add(key)
+        p_base = path.split("?")[0].rstrip("/").lower()
+        if configured_paths and p_base and not any(p_base == c or p_base.startswith(c + "/") or p_base.startswith(c + "{") for c in configured_paths):
+            obj["_path_mismatch"] = True
+        norm = {"title": title, "method": method, "path": path, "priority": priority,
+                "expected": str(obj.get("expected", "")).strip() or "HTTP 2xx",
+                "precondition": str(obj.get("precondition", "")).strip() or "无",
+                "steps": str(obj.get("steps", "")).strip() or ""}
+        valid.append(norm)
+    return valid, rejected
 
 
 @app.post("/api/ai-suggest-stream")
@@ -1716,10 +1765,18 @@ async def ai_suggest_stream(request: Request):
                     yield f"data: {json.dumps({'t':'error','msg':f'AI 未产出有效用例 (返回{len(buf)}字符: {raw_snippet[:150]})'})}\n\n"
                     yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
                     return
+                valid, rejected = _validate_cases(cases, apis)
+                if not valid:
+                    yield f"data: {json.dumps({'t':'error','msg':f'AI 用例全部未通过筛查 ({len(rejected)}条被拒: {";".join(rejected[:3])})'})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
+                    return
                 yield f"data: {json.dumps({'t':'clear','source':'ai'})}\n\n"
-                for obj in cases:
+                for obj in valid:
                     yield f"data: {json.dumps({'t':'case','case':obj,'source':'ai'})}\n\n"
-                yield f"data: {json.dumps({'t':'info','msg':f'AI 生成 {len(cases)} 条用例'})}\n\n"
+                msg = f'AI 生成 {len(valid)} 条用例'
+                if rejected:
+                    msg += f' (筛查剔除 {len(rejected)} 条)'
+                yield f"data: {json.dumps({'t':'info','msg':msg})}\n\n"
                 yield f"data: {json.dumps({'t':'done','source':'ai'})}\n\n"
         except Exception as e:
             en = type(e).__name__
