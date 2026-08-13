@@ -109,7 +109,7 @@ function render() {
 }
 function _render() {
     const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    const escSingle=s=>s.replace(/'/g,"\\'").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const escSingle=s=>String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const q = (document.getElementById('filter').value||'').toLowerCase();
     const fs = document.getElementById('f-status').value;
     let filtered = cases.filter(c => {

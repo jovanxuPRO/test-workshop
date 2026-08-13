@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-import os, json, shutil, subprocess, threading, queue, asyncio, re, base64, html, logging, uuid, signal, atexit
+import os, json, shutil, subprocess, threading, queue, asyncio, re, base64, html, logging, uuid, signal, atexit, sys
 import ipaddress, urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -152,7 +152,7 @@ async def startup_check():
             checks[mod] = False
             logger.warning(f"Missing dependency: {mod}")
     try:
-        r = subprocess.run(["python", "-m", "pytest", "--version"], capture_output=True, text=True, timeout=15)
+        r = subprocess.run([sys.executable, "-m", "pytest", "--version"], capture_output=True, text=True, timeout=15)
         if r.returncode != 0:
             logger.warning("pytest not found on PATH")
         else:
@@ -184,10 +184,10 @@ def is_safe_url(url_str):
     lowered = url_str.lower()
     if lowered.startswith("file://") or lowered.startswith("ftp://") or lowered.startswith("gopher://"):
         return False
-    # Allow mock_server explicitly (most common dev target)
-    if lowered.startswith("http://127.0.0.1:8000") or lowered.startswith("http://localhost:8000"):
-        return True
     parsed = urllib.parse.urlparse(url_str)
+    # Allow mock_server explicitly (most common dev target) — parse first to prevent userinfo bypass
+    if parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost") and parsed.port == 8000:
+        return True
     host = parsed.hostname
     if not host: return False
     # Block known internal hostname patterns
@@ -338,7 +338,7 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
         if m != "GET": continue
         for ename, fields in entity_map.items():
             if ename and ename in p.lower() and fields:
-                flist = "], ".join([f"'{f}'" for f in fields[:5]])
+                flist = ", ".join([f"'{f}'" for f in fields[:5]])
                 extra.append({"m": "GET", "p": p, "n": f"契约校验-{ename}({len(fields[:5])}字段)",
                               "layer": "L2", "check": f"isinstance((d:=r.json().get('data', r.json())), list) and len(d) > 0 and all(k in d[0] for k in [{flist}])"})
                 break
@@ -663,7 +663,7 @@ def gen_code(plan):
             layered = _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine)
             for lt in layered:
                 cn = safe(lt.get("n", "分层测试"))
-                m = lt.get("m", "GET"); p = safe_path(lt.get("p", "/"))
+                m = lt.get("m", "GET"); p = safe_path(re.sub(r'\{[^}]+\}', '1', lt.get("p", "/")))
                 lv = lt.get("layer", "L*")
                 chk = lt.get("check", "r.status_code < 500")
                 # Build stmt for the test
@@ -681,7 +681,16 @@ def gen_code(plan):
                 lines.append("")
                 lines.append(f"    def test_ok(self, c):")
                 lines.append(f'        """{lv}: {lt.get("n","")}"""')
-                if lv == "L7":
+                if lv == "L4" and m == "sequence":
+                    # Real state machine sequence: create → list(verify)
+                    steps = lt.get("steps", [])
+                    create_ep = steps[0] if steps else p
+                    list_ep = steps[1] if len(steps) > 1 else p
+                    lines.append(f'        r1 = c.post("{create_ep}", json={{"name":"seq-test","price":1,"stock":1}})')
+                    lines.append(f'        assert r1.status_code in (200, 201)')
+                    lines.append(f'        r2 = c.get("{list_ep}")')
+                    lines.append(f'        assert r2.status_code == 200')
+                elif lv == "L7":
                     # Real concurrency: 10 parallel requests via ThreadPoolExecutor
                     lines.append(f'        import concurrent.futures')
                     lines.append(f'        def _req(_): return c.request("{m}","{p}").status_code')
@@ -790,7 +799,7 @@ def gen_code(plan):
         for i, r in enumerate(rules):
             api = apis[i % len(apis)] if apis else {"p": "/", "m": "GET"}
             p = safe_path(api.get("p", "/"))
-            tp = p.replace("{id}", "1")
+            tp = re.sub(r'\{[^}]+\}', '1', p)
             dr = r.replace('"', "'").replace("\\", "\\\\")
             lines.append(f"    def test_d{i}(self, c):")
             lines.append(f'        """{dr}"""')
@@ -858,7 +867,7 @@ def list_history_json():
     # Consecutive pass count (release readiness)
     streak = 0
     for e in entries:
-        if e.get("failed", 0) == 0: streak += 1
+        if e.get("failed", 0) == 0 and e.get("errors", 0) == 0: streak += 1
         else: break
     return {"history": entries, "trend": list(reversed(trend)), "streak": streak,
             "ready": streak >= 3}
@@ -875,9 +884,9 @@ def audit_export(from_date: str = "", to_date: str = ""):
         "execution_history": entries[:50],
         "test_case_library_count": len(tcs),
         "test_cases": tcs[:200],
-        "streak": sum(1 for e in entries if e.get("failed", 0) == 0 and entries.index(e) < (
-            next((i for i, x in enumerate(entries) if x.get("failed", 0) > 0), len(entries))
-        ))  # streak until first failure
+        "streak": sum(1 for e in entries if e.get("failed", 0) == 0 and e.get("errors", 0) == 0 and entries.index(e) < (
+            next((i for i, x in enumerate(entries) if x.get("failed", 0) > 0 or x.get("errors", 0) > 0), len(entries))
+        ))  # streak until first failure/error
     }
 
 
@@ -951,14 +960,14 @@ async def gnr(request: Request):
     async with _exec_sem:
         try:
             body = await request.json()
-            if len(json.dumps(body)) > 50000:
+            if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > 50 * 1024:
                 return {"ok": False, "error": "Plan too large"}
             d, auth_env = gen_code(body)
             xml_path = os.path.join(d, "results.xml")
             env = os.environ.copy()
             env.update(auth_env)
             r = await asyncio.to_thread(
-                subprocess.run, ["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
+                subprocess.run, [sys.executable, "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
                 capture_output=True, text=True, timeout=300, env=env)
             t = p = f = e = 0
             if os.path.exists(xml_path):
@@ -994,7 +1003,7 @@ async def save_plan(request: Request):
         if not _check_rate("plan", max_req=30, window=60):
             return {"error": "Rate limit exceeded"}
         body = await request.json()
-        if len(json.dumps(body)) > 50000:
+        if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > 50 * 1024:
             return {"error": "Plan too large"}
         pid = uuid.uuid4().hex[:8]
         PLANS[pid] = body
@@ -1052,7 +1061,18 @@ async def stream(request: Request):
         return _attach_existing(pid, existing, plan, xml_path)
 
     if existing:
+        # Process finished while detached — drain leftover state before starting fresh
         RUN_PROCS.pop(pid, None)
+        q = RUN_QUEUES.pop(pid, None)
+        if q:
+            # Drain remaining output so a new session doesn't replay it
+            while True:
+                try:
+                    line = q.get_nowait()
+                    if line == "__END__": break
+                except queue.Empty:
+                    break
+        RUN_TALLIES.pop(pid, None)
 
     try:
         d, auth_env = gen_code(plan)
@@ -1084,6 +1104,14 @@ def _attach_existing(pid, proc, plan, xml_path=""):
             _deadline = datetime.now().timestamp() + 600
             while True:
                 if datetime.now().timestamp() > _deadline:
+                    p = RUN_PROCS.get(pid)
+                    if p:
+                        try: p.terminate(); p.kill()
+                        except Exception: pass
+                    RUN_PROCS.pop(pid, None)
+                    RUN_QUEUES.pop(pid, None)
+                    RUN_TALLIES.pop(pid, None)
+                    PLANS.pop(pid, None)
                     yield f"data: {json.dumps({'t':'error','msg':'Execution timeout'})}\n\n"
                     break
                 try:
@@ -1113,12 +1141,19 @@ def _attach_existing(pid, proc, plan, xml_path=""):
                     break
                 st = line.strip()
                 if "PASSED" in st and "::" in st:
-                    tally[0] += 1; tally[1] += 1
+                    tally[0] += 1; tally[1] += 1; icon = "[PASS]"
                 elif "FAILED" in st and "::" in st:
-                    tally[0] += 1; tally[2] += 1
+                    tally[0] += 1; tally[2] += 1; icon = "[FAIL]"
                 elif "ERROR" in st and "::" in st:
-                    tally[0] += 1; tally[3] += 1
-                yield f"data: {json.dumps({'t':'test','line':st[-300:].replace(chr(10),' ').replace(chr(13),'')})}\n\n"
+                    tally[0] += 1; tally[3] += 1; icon = "[ERR ]"
+                else:
+                    icon = ""
+                pct_str = ""
+                m = re.search(r'\[(\s*\d+)%\]', st)
+                if m: pct_str = m.group(1).strip()
+                out_line = f"{icon} {st[-280:]}" if icon else st[-300:]
+                out_line = out_line.replace("\n", " ").replace("\r", "")
+                yield f"data: {json.dumps({'t':'test','line':out_line,'pct':pct_str})}\n\n"
         finally:
             pass  # Keep process + queue alive for another reconnect
     return StreamingResponse(s(), media_type="text/event-stream",
@@ -1135,7 +1170,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
         try:
             try:
                 proc = subprocess.Popen(
-                    ["python", "-m", "pytest", d, "-v", "--tb=line", "--color=no", f"--junitxml={xml_path}"],
+                    [sys.executable, "-m", "pytest", d, "-v", "--tb=line", "--color=no", f"--junitxml={xml_path}"],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
                 RUN_PROCS[pid] = proc
             except Exception as ex:
@@ -1245,8 +1280,8 @@ def report_list():
         try:
             root = ET.parse(xf).getroot()
             ts = root.find("testsuite") or root
-            t = int(ts.get("tests","0") or 0); f = int(ts.get("failures","0") or 0); e = int(ts.get("errors","0") or 0)
-            p = t-f-e; rate = round(p/t*100,1) if t else 0
+            t = int(ts.get("tests","0") or 0); f = int(ts.get("failures","0") or 0); e = int(ts.get("errors","0") or 0); s = int(ts.get("skipped","0") or 0)
+            p = t-f-e-s; rate = round(p/t*100,1) if t else 0
             c = "#27ae60" if f==0 else "#ef5350"
             sd = html.escape(d, quote=True)
             items += f'<tr onclick="document.getElementById(\'d{sd}\').classList.toggle(\'hidden\')" style="cursor:pointer">'
@@ -1675,12 +1710,13 @@ def _validate_cases(raw_cases, apis=None):
             rejected.append(f"重复用例 {title[:30]}"); continue
         seen.add(key)
         p_base = path.split("?")[0].rstrip("/").lower()
-        if configured_paths and p_base and not any(p_base == c or p_base.startswith(c + "/") or p_base.startswith(c + "{") for c in configured_paths):
-            obj["_path_mismatch"] = True
+        path_mismatch = bool(configured_paths and p_base and not any(p_base == c or p_base.startswith(c + "/") or p_base.startswith(c + "{") for c in configured_paths))
         norm = {"title": title, "method": method, "path": path, "priority": priority,
                 "expected": str(obj.get("expected", "")).strip() or "HTTP 2xx",
                 "precondition": str(obj.get("precondition", "")).strip() or "无",
                 "steps": str(obj.get("steps", "")).strip() or ""}
+        if path_mismatch:
+            norm["_path_mismatch"] = True
         valid.append(norm)
     return valid, rejected
 
@@ -2459,7 +2495,7 @@ if __name__ == "__main__":
             sys.exit(0)
         xml_path = os.path.join(d, "results.xml")
         r = subprocess.run(
-            ["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
+            [sys.executable, "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
             capture_output=True, text=True, timeout=600, env={**os.environ})
         # Copy results to output dir
         out_xml = os.path.join(args.output_dir, "test-results.xml")
