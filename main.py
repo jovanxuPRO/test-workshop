@@ -1709,6 +1709,7 @@ async def ai_suggest_stream(request: Request):
 {ctx_block}
 格式: {{"title":"正常返回","priority":"P0","expected":"200","method":"GET","path":"/api/path"}}
 {{"title":"缺少参数","priority":"P1","expected":"400","method":"POST","path":"/api/path"}}
+硬性要求: method 字段必须与上面API列表中的方法完全一致（如 PUT/DELETE/PATCH 端点必须用对应方法，禁止全部写GET）。
 每个端点2条，不要外层数组，不要markdown。"""
 
     async def event_stream():
