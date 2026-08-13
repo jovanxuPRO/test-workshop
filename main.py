@@ -1044,7 +1044,8 @@ async def stream(request: Request):
     # Reconnect: if process still running for this pid, attach to existing stdout
     existing = RUN_PROCS.get(pid)
     if existing and existing.poll() is None:
-        return _attach_existing(pid, existing, plan)
+        xml_path = os.path.join(plan.get("_dir", ""), "results.xml") if plan.get("_dir") else ""
+        return _attach_existing(pid, existing, plan, xml_path)
 
     if existing:
         RUN_PROCS.pop(pid, None)
@@ -1058,12 +1059,13 @@ async def stream(request: Request):
             yield f"data: {json.dumps({'t':'error','msg':'Code generation failed'})}\n\n"
         return StreamingResponse(e(), media_type="text/event-stream")
     xml_path = os.path.join(d, "results.xml")
+    plan["_dir"] = d
     env = os.environ.copy()
     env.update(auth_env)
     return _run_stream(pid, plan, d, xml_path, env, request)
 
 
-def _attach_existing(pid, proc, plan):
+def _attach_existing(pid, proc, plan, xml_path=""):
     """Reconnect SSE to an already-running subprocess using its persistent queue."""
     q = RUN_QUEUES.get(pid)
     if q is None:
@@ -1091,6 +1093,14 @@ def _attach_existing(pid, proc, plan):
                 if line == "__END__":
                     T, P, F, E = tally
                     rate = round(P/T*100, 1) if T else 0
+                    e = {"name": plan.get("name","?"), "url": plan.get("url","?").split("?")[0],
+                        "total": T, "passed": P, "failed": F, "errors": E,
+                        "rate": rate, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "dir": os.path.basename(plan.get("_dir", ""))}
+                    save_hist_entry(e)
+                    save_auto_tcs(plan)
+                    if xml_path:
+                        update_tc_status(plan, xml_path)
                     RUN_PROCS.pop(pid, None)
                     RUN_QUEUES.pop(pid, None)
                     RUN_TALLIES.pop(pid, None)
