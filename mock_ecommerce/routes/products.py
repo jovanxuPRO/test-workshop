@@ -8,7 +8,8 @@ router = APIRouter(prefix="/api/products", tags=["Products"])
 
 @router.get("")
 def list_products(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=100),
-                  category: Optional[str] = None, search: Optional[str] = None):
+                  category: Optional[str] = None, search: Optional[str] = None,
+                  user = Depends(require_auth)):
     result = _store["products"]
     if category: result = [p for p in result if p["category"] == category]
     if search: result = [p for p in result if search.lower() in p["name"].lower()]
