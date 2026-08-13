@@ -278,7 +278,73 @@ mock_ecommerce/ (端口8000, 靶机)
 
 ---
 
-## 十二、数据流
+## 十三、按钮功能全表（含行号与处理器）
+
+### 13.1 index.html 向导页
+
+| 按钮 | 行 | 处理器 | 行为 |
+|------|----|--------|------|
+| 新建方案/执行/AI配置 | 44/45/50 | `tab(t)` | 切换三个面板，高亮当前 |
+| + 添加接口 | 87 | `addApi()` | 新增 API 行（GET/POST 下拉+路径+说明+▶快测+删除） |
+| 从用例库导入 | 88 | `loadTCs()` | 打开 tc-modal 弹窗 |
+| 弹窗关闭 × | 96 | 内联 | 隐藏 tc-modal |
+| 导入所选用例 | 100 | `importSelectedTCs()` | 勾选用例写入向导 API 表 |
+| + 添加页面 | 110 | `addPg()` | 新增页面行（路径+名称+浏览器） |
+| 📚 全部加载 | 127 | `loadAllPRDs()` | 拉取全部 PRD→textarea→自动 analyzeContext |
+| AI 分析业务语义 | 129 | `analyzeContext()` | POST /api/analyze-context→渲染结果 |
+| 取消 | 130 | `_cancelAnalyze()` | AbortController 中止分析 |
+| 清除 | 131 | 内联 | 清空 textarea+_ctx+重渲染 |
+| ✏ 编辑 | 138 | `editContext()` | window.open JSON 编辑弹窗 |
+| 生成用例预览 | 157 | `previewCases()` | SSE 流式拉取 AI 用例+分区渲染 |
+| 重新生成 | 166 | `previewCases()` | 重跑预览 |
+| 执行选中 | 167 | `execPreviewed()` | 勾选用例→exact 模式执行 |
+| 保存到用例库 | 168 | `savePreviewed()` | 预览用例→POST /api/save-tc |
+| 🔒 表头 | 175 | `toggleAllLocks()` | 全锁定/全解锁 |
+| 直接执行全部 | 193 | `_runWithConfirm()` | 生产URL警告确认→generate() |
+| 新建配置 | 205 | `newAIConfig()` | AI profile 新建 |
+| 保存配置 | 215 | `saveAIConfig()` | profile→localStorage ai_profiles |
+| 删除配置 | 216 | `deleteAIConfig()` | 移除当前 profile |
+| 显隐 Key | 240 | `toggleAIKeyVisibility()` | password input 切换 |
+| 执行(历史) | 264 | `execHist()` | 历史方案→执行 |
+| 模板按钮 | 364 | `apply(k,this)` | 模板→填充表单+_ctx+save |
+| ▶ 快测 | 388 | `quickTest(this)` | 单端点快速执行 |
+| × 删行 | 389/411 | 内联 | 删除行+save() |
+| 停止/暂停按钮区 | 487/578/585/594/605 | pauseExec/resumeExec/stopExec | 三态控制 |
+| 删除历史 | 635 | `delExec(i)` | DELETE /api/history/{idx} |
+| 执行面板控制 | 668 | pauseExec/stopExec | dash 面板三态 |
+| 保存并关闭(编辑弹窗) | 1135 | updateContext | JSON→_ctx→save |
+
+### 13.2 index.html 预览区（动态生成）
+
+| 按钮 | 处理器 | 行为 |
+|------|--------|------|
+| 全选框 | `togglePreviewAll()` | 勾选全部用例 |
+| 🔓/🔒 每行锁 | `toggleLock(el,key)` | 单用例锁定（重生成保留） |
+
+### 13.3 ci.html CI 控制台
+
+| 按钮 | 行 | 处理器 | 行为 |
+|------|----|--------|------|
+| ▶ 执行 CI | 87 | `startCI()` | 三阶段：AI生成→路径筛选→执行，SSE 日志 |
+| ⏹ 停止 | 88 | `stopCI()` | POST /api/stop+关SSE |
+| 触发远程 CI | 113 | `triggerGitHubCI()` | POST /api/ci-trigger |
+| 查看最近状态 | 114 | `checkGitHubCI()` | GET /api/ci-status 渲染5次runs |
+
+### 13.4 tc.html 用例管理
+
+| 按钮 | 行 | 处理器 | 行为 |
+|------|----|--------|------|
+| 执行选中 | 50 | `execSelected()` | 勾选用例执行 |
+| 新增用例 | 51 | `openAdd()` | 打开表单 |
+| 取消 | 86 | 内联 | 关闭表单 |
+| 保存 | 87 | `saveTC()` | POST /api/tc |
+| 模块筛选 | 133 | `filterModule(m)` | 按模块过滤 |
+| 编辑 | 155 | `openEdit(id)` | 载入表单 |
+| 删除 | 156 | `delTC(id)` | DELETE /api/tc/{cid} |
+
+---
+
+## 十四、数据流
 
 ```
 fixUrl → plan.url → gen_code → conftest.B
