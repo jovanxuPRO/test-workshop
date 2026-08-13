@@ -1,258 +1,314 @@
-# 测试工坊 Pro — 系统分析与规则文档
+# 测试工坊 Pro — 精准系统分析
 
-> 生成时间：2026-08-13 | 版本：基于 main.py v2443 行 + static/ 前端 + mock_ecommerce/ 靶机
-
----
-
-## 一、系统架构总览
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        浏览器 (localhost:9000)                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐            │
-│  │ Wizard 向导  │  │ Exec 执行面板 │  │ AI 配置面板   │            │
-│  │ (5步输入)    │  │ (暂停/继续)   │  │ (多Profile)   │            │
-│  └──────┬──────┘  └──────┬───────┘  └──────┬───────┘            │
-│         │   /tc 用例管理   │  /ci CI控制台   │                    │
-└─────────┼─────────────────┼────────────────┼────────────────────┘
-          │ REST API + SSE  │                │
-┌─────────┴─────────────────┴────────────────┴────────────────────┐
-│                       main.py (FastAPI)                          │
-│                                                                  │
-│  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌──────────────────┐   │
-│  │ AI 生成层 │ │ 7层矩阵层  │ │ 代码生成层 │ │ 执行引擎层        │   │
-│  │ 用例筛查   │ │ 业务上下文 │ │ gen_code │ │ SSE + 暂停/继续    │   │
-│  └──────────┘ └───────────┘ └──────────┘ └──────────────────┘   │
-│  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌──────────────────┐   │
-│  │ 安全层    │ │ 存储层     │ │ 报告层    │ │ CLI/CI层          │   │
-│  │ SSRF/加密 │ │ JSON持久化 │ │ JUnit解析 │ │ argparse/定时     │   │
-│  └──────────┘ └───────────┘ └──────────┘ └──────────────────┘   │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │ HTTP (8000)
-┌──────────────────────┴───────────────────────────────────────────┐
-│                mock_ecommerce/ (企业级电商靶机)                    │
-│  JWT登录 · 三级角色 · 商品CRUD · 订单状态机 · 退款流程 · SPA前端    │
-└──────────────────────────────────────────────────────────────────┘
-```
+> 生成：2026-08-13 | main.py 2501 行 / index.html 1297 行 / mock_ecommerce 17 文件
 
 ---
 
-## 二、功能模块清单
+## 一、端点全景（25 个，含精确行号）
 
-### M1. 测试向导（Wizard）
-**位置**: static/index.html `tab-plan`
+### 1.1 执行类
 
-| 步骤 | 内容 | 数据流 |
-|------|------|--------|
-| 1. 模板与项目信息 | 3 模板（电商/百度/Demo）+ 项目名 + Base URL + 认证方式 | → localStorage `wiz` |
-| 2. API 接口 | 方法(GET/POST) + 路径 + 说明，▶ 快测单端点 | → `apis[]` |
-| 3. Web 页面 | 路径 + 名称 + 浏览器 | → `pages[]` |
-| 4. 数据规则 | 每行一条规则 | → `rules[]` |
-| 5. 业务上下文 | PRD 导入/上传/粘贴 + AI 分析 | → `_ctx` |
+| # | 端点 | 方法 | 行 | 限流 | 行为 |
+|---|------|------|----|----|------|
+| 1 | `/api/plan` | POST | 987 | 30/min | 校验 body ≤50000 字符 → `PLANS[pid]=body` → 返回 8位pid |
+| 2 | `/api/stream?id=` | GET | 1035 | 无 | plan 不存在→error；进程在跑→`_attach_existing` 重连；否则 `gen_code`→`_run_stream` |
+| 3 | `/api/gnr` | POST | 944 | 20/min | **同步执行**：gen_code→pytest(300s超时)→XML解析→存历史→返回JSON |
+| 4 | `/api/stop?sid=` | POST | 1007 | 无 | 杀进程+清 RUN_PROCS/RUN_QUEUES/RUN_TALLIES/PLANS；sid空则全清 |
 
-**规则 W1**: Base URL 经 `fixUrl()` 自动修正（localhost → 127.0.0.1:8000，补 http:// 前缀，去尾部斜杠）
-**规则 W2**: 方法仅 GET/POST
-**规则 W3**: 所有输入实时 `save()` 到 localStorage，防丢失
+### 1.2 AI 类
 
-### M2. AI 用例生成（AI Generation）
-**位置**: main.py `/api/ai-suggest-stream`（流式SSE）+ `/api/ai-suggest`（同步）
+| # | 端点 | 方法 | 行 | 行为 |
+|---|------|------|----|------|
+| 5 | `/api/ai-suggest` | POST | 1600 | **同步 JSON 返回**（非流式），`_call_llm`+`_validate_cases` |
+| 6 | `/api/ai-suggest-stream` | POST | 1684 | **SSE 流式**：info→clear→case×N→done |
+| 7 | `/api/analyze-context` | POST | 1791 | PRD 文本→AI/启发式→entities/relations/state_machine/business_rules |
+| 8 | `/api/ai-key` | POST | 1523 | key<8字符拒绝；空值清除+删文件；有效则 AES 加密落盘 `.ai_key.enc` |
+| 9 | `/api/ai-key-status` | GET | 1506 | 返回 configured/valid/hint/source |
 
-**流程**:
-```
-用户点击生成 → POST /api/ai-suggest-stream
-  → 校验: is_safe_url(base_url)  [规则A1]
-  → 校验: AI Key 存在且长度≥20 且前缀 sk-/fk-/ak-  [规则A2]
-  → 构造 prompt（API列表 + 业务规则 + "只输出JSON行,method只用GET/POST"）
-  → 非流式调用 LLM（timeout=300s，max_tokens≥16000）  [规则A3]
-  → 解析 message.content 中所有 {...} JSON 对象  [规则A4]
-  → _validate_cases 筛查  [规则A5]
-  → SSE 事件流: info → clear → case×N → done
-```
+### 1.3 PRD 类
 
-**规则 A1（SSRF）**: base_url 拒绝私有IP/内网/云元数据/file:///gopher://；`127.0.0.1:8000` 白名单
-**规则 A2（Key格式）**: 长度≥20 且以 sk-/fk-/ak- 开头；乱码 key 直接拒绝，不发起 HTTP 调用
-**规则 A3（推理模型）**: deepseek-v4-pro 是推理模型，流式返回 reasoning_content 先于 content；因此改用非流式调用，等待完整响应后解析
-**规则 A4（解析容错）**: 花括号深度匹配提取每个 JSON 对象，单个解析失败跳过不影响其余
-**规则 A5（用例筛查）**:
-- 方法 ∈ {GET, POST}，否则剔除
-- 路径必须以 / 或 http 开头
-- 优先级 ∈ {P0,P1,P2}，否则归一化 P1
-- title 必填且 ≤200 字符
-- 去重: 方法+路径+标题 相同只留第一条
-- 路径与配置 API 不匹配 → 打 `_path_mismatch` 标记保留
-- 全部剔除 → 返回 error
+| # | 端点 | 方法 | 行 | 行为 |
+|---|------|------|----|------|
+| 10 | `/api/prd-list` | GET | 1821 | 扫描 mock_ecommerce/docs/*.md 返回文件名列表 |
+| 11 | `/api/prd-load?file=` | GET | 1834 | 防穿越检查 `..`/`/`→读文件内容 |
 
-### M3. 业务上下文分析（Context Analysis）
-**位置**: main.py `/api/analyze-context` + `_analyze_with_ai` + `_analyze_with_heuristic`
+### 1.4 报告类
 
-**流程**: PRD 文本 → AI 分析 → `{entities, relations, state_machine, business_rules}` → 前端渲染 + 可编辑
+| # | 端点 | 方法 | 行 | 行为 |
+|---|------|------|----|------|
+| 12 | `/api/report-count` | GET | 1205 | 最新 XML 摘要，**passed = t-f-e-s**（已修skipped） |
+| 13 | `/api/report?dir=` | GET | 1267 | HTML 报告页 `_build_report` |
+| 14 | `/api/report-list` | GET | 1234 | 所有报告目录列表 |
 
-**规则 C1**: 文本上限 50000 字符
-**规则 C2**: 有 AI Key → AI 分析（温度0.2，max_tokens 6000）；无 Key → 启发式正则提取
-**规则 C3（启发式）**: 从 `## 标题`/`/api/xxx` 提取实体；从 `R###:` 编号提取规则；从状态流转章节提取状态机
-**规则 C4**: 分析结果可 JSON 编辑（弹窗），编辑后 `save()` 持久化
-**规则 C5**: 重新分析时智能合并（新结果稀疏时保留旧实体/状态机）
+### 1.5 历史类
 
-### M4. 7 层安检机测试矩阵（Layered Matrix）
-**位置**: main.py `_layered_tests`
+| # | 端点 | 方法 | 行 | 行为 |
+|---|------|------|----|------|
+| 15 | `/api/history` | GET | 881 | HTML 表格 |
+| 16 | `/api/history-data` | GET | 845 | JSON + trend(10次) + streak + ready(streak≥3) |
+| 17 | `/api/history/{idx}` | DELETE | 930 | 删除单条 |
+| 18 | `/api/audit-export` | GET | 864 | 合规导出：执行历史+用例库 JSON |
 
-| 层 | 生成规则 | 触发条件 |
-|----|---------|---------|
-| L1 可达性 | 每端点一条 `status_code < 500` | 有上下文即生成 |
-| L2 字段契约 | 实体字段全存在 `all(k in d[0] for k in [...])` | 实体有 fields 列表 |
-| L3 业务规则 | 关键词匹配: 金额/库存/唯一/权限/状态/必填/上限/通用 | 规则含关键词 |
-| L4 状态机 | 实体 create→verify 序列测试 | 上下文有 state_machine |
-| L5 数据完整性 | 订单金额=Σ(单价×数量) 跨API校验 | ≥2 个 API |
-| L6 安全注入 | 剥认证头请求，断言 401/403 | 每端点 |
-| L7 边界压力 | ThreadPoolExecutor 10 并发，全部 <500 | 每端点 |
+### 1.6 用例库类
 
-**规则 L3-1（金额/库存）**: 负数拒绝，断言 400/422
-**规则 L3-2（唯一性）**: 重复值 POST，断言 200/201/400/409
-**规则 L3-3（权限）**: 断言 200/401/403
-**规则 L3-4（状态流转）**: DELETE 到不存在 id，断言 400/404
-**规则 L3-5（必填）**: 空字段 POST，断言 400/422
-**规则 L3-6（上限）**: 超大金额，断言 400/422
+| # | 端点 | 方法 | 行 | 行为 |
+|---|------|------|----|------|
+| 19 | `/api/tc` | GET | 1469 | 全量返回 |
+| 20 | `/api/tc` | POST | 1473 | 字段截断[:100]→append→save |
+| 21 | `/api/tc/{cid}` | PUT | 2256 | **无类型校验**（已知问题） |
+| 22 | `/api/tc/{cid}` | DELETE | 2269 | 删除 |
+| 23 | `/api/save-tc` | POST | 1496 | 计划→批量存用例库（save_auto_tcs） |
 
-### M5. 测试代码生成（Code Gen）
-**位置**: main.py `gen_code` + `_exact_test`
+### 1.7 其他
 
-**流程**: plan → conftest.py + test_api.py + test_ui.py + test_data.py + test_unit.py
-
-**规则 G1**: 路径参数 `{xxx}` 统一替换为 `1`（`re.sub(r'\{[^}]+\}', '1', p)`）
-**规则 G2**: 方法白名单，非法方法降级 GET
-**规则 G3（authValue 净化）**: 正则 `[^\w\-=+/,.:;@#$%^&*()!]` 过滤后经环境变量传递，绝不写入生成文件
-**规则 G4（_exact_test 关键词匹配）**:
-- 安全类优先: SQL注入 → `<500`；XSS → `400+ 或 "<script>" not in text`
-- 错误类: 缺少→400/422/401；不存在→404/400；未认证→401/403；无效→400/422；重复→400/409
-- 正常类: 创建→200/201；更新→200/201/204；删除→200/204；查询→200；详情→200/404；登录→200/201
-**规则 G5（GET 方法）**: GET 不带 json body（httpx Client.get 不支持 json 参数）
-**规则 G6**: 保留最近 20 个生成目录，自动清理
-
-### M6. 执行引擎（Execution Engine）
-**位置**: main.py `/api/plan` + `/api/stream` + `_run_stream` + `_attach_existing` + `/api/stop`
-
-**状态机**:
-```
-[新建] → POST /api/plan → PLANS[pid]
-  ↓ GET /api/stream
-[运行中] ←────┐ resume: GET /api/stream
-  ↓ 客户端断开  │ (进程继续跑，输出进持久队列)
-[已暂停] ──────┘
-  ↓ __END__（pytest 自然结束）
-[完成] → save_hist_entry + save_auto_tcs + update_tc_status
-  ↓ POST /api/stop（任意时刻）
-[已停止] → 杀进程 + 清理全部状态
-```
-
-**规则 E1**: `RUN_PROCS[pid]` 进程表、`RUN_QUEUES[pid]` 持久输出队列、`RUN_TALLIES[pid]` 跨重连计数器
-**规则 E2**: 暂停 = 断开 SSE，不杀进程；继续 = 重连同一队列续读（断线期间输出不丢）
-**规则 E3**: 停止 = 唯一杀进程入口，清理 RUN_PROCS/RUN_QUEUES/RUN_TALLIES/PLANS
-**规则 E4**: 10 分钟超时上限
-**规则 E5**: pytest 参数 `-v --tb=line --color=no --junitxml=results.xml`
-**规则 E6**: 计数解析: `PASSED/Failed/ERROR` + `::` 判定单条用例
-**规则 E7**: 完成时保存历史（50条上限）+ 自动保存用例库 + 更新用例状态
-
-### M7. 报告层（Report）
-**位置**: `/api/report` + `/api/report-count` + `/api/report-list` + `/api/history` + `/api/audit-export`
-
-**规则 R1**: 报告统计 `passed = total - failed - errors - skipped`（skipped 必须扣除）
-**规则 R2**: 通过率 = passed/total，防除零
-**规则 R3**: 历史含趋势（最近10次）+ 连续通过 streak + 可上线判断（streak≥3）
-**规则 R4**: audit-export 导出执行历史+用例库 JSON 供合规审计
-
-### M8. 安全层（Security）
-**规则 S1（SSRF）**: `is_safe_url` 进程内 DNS 解析，拒绝私有/回环/保留/多播 IP，拒绝 169.254.169.254 云元数据
-**规则 S2（AI Key 加密）**: PBKDF2-HMAC-SHA256 派生密钥（10万轮），HMAC 认证标签防篡改，密钥存 `.tw_secret` 随机生成
-**规则 S3（XSS）**: 前端 `he()` 转义所有用户输入（预览行/历史下拉/Data规则/Unit行）
-**规则 S4（CSP）**: 安全响应头 X-Content-Type-Options/X-Frame-Options/Referrer-Policy/CSP
-**规则 S5（速率限制）**: gnr 20/min, plan 30/min
-**规则 S6（并发）**: 信号量限制同时执行
-**规则 S7（原子写入）**: 临时文件+重命名
-**规则 S8（authValue）**: 仅内存传递，localStorage 不存
-
-### M9. 存储层（Storage）
-- `test_cases.json` — 用例库
-- `exec_history.json` — 执行历史（50条）
-- `.ai_key.enc` — AI Key 加密存储
-- `.tw_secret` — 加密密钥
-- `generated_tests/` — 测试代码（20个保留）
-
-### M10. 企业级靶机（mock_ecommerce）
-**规则 M1**: JWT 登录（PBKDF2 哈希验证，盐:hash 格式）
-**规则 M2**: 三级角色 admin/operator/viewer
-**规则 M3**: 订单状态机 created→confirmed→paid→shipped→delivered（+cancelled）
-**规则 M4**: 创建订单扣库存；取消订单退库存；退款批准退库存（仅 paid/shipped）
-**规则 M5**: cancel_order 所有权检查（非 owner 非 admin 403）
-**规则 M6**: 退款金额 0<amount≤订单总额
+| # | 端点 | 方法 | 行 | 行为 |
+|---|------|------|----|------|
+| 24 | `/ci` | GET | 2368 | CI 控制台页面 |
+| 25 | `/api/ci-trigger` | POST | 2377 | GitHub Actions 触发 |
+| 26 | `/api/ci-status` | GET | 2394 | 最近5次 workflow runs |
+| 27 | `/` | GET | 2412 | 主页面 |
 
 ---
 
-## 三、模块间关系与数据流
+## 二、函数清单（30 个，含行号）
 
-```
-                ┌────────────────────────────────────┐
-                │          用户输入层                 │
-                │  URL + APIs + Pages + Rules + PRD  │
-                └──────────┬─────────────────────────┘
-                           │
-              ┌────────────▼────────────┐
-              │   M3 业务上下文分析      │──→ _ctx {entities, rules, state_machine}
-              └────────────┬────────────┘
-                           │ 注入
-              ┌────────────▼────────────┐
-              │   M2 AI 用例生成        │──→ cases[] (经 M2 筛查规则A5)
-              └────────────┬────────────┘
-                           │ exact 模式
-              ┌────────────▼────────────┐
-              │   M4 7层矩阵 _layered   │──→ extra cases (L1-L7)
-              └────────────┬────────────┘
-                           │ 合并
-              ┌────────────▼────────────┐
-              │   M5 gen_code           │──→ 4个测试文件 + conftest
-              └────────────┬────────────┘
-                           │ subprocess pytest
-              ┌────────────▼────────────┐
-              │   M6 执行引擎           │──→ SSE 实时流 (暂停/继续/停止)
-              └────────────┬────────────┘
-                           │ results.xml
-              ┌────────────▼────────────┐
-              │   M7 报告层             │──→ 仪表盘 + 趋势 + 可上线判断
-              └────────────┬────────────┘
-                           │
-              ┌────────────▼────────────┐
-              │   M9 存储层             │──→ 历史/用例库持久化
-              └─────────────────────────┘
+### 2.1 安全与基础设施
 
-横切关注点: M8 安全层贯穿所有模块
-```
+| 函数 | 行 | 职责 |
+|------|----|------|
+| `SecurityHeadersMiddleware` | 34 | CSP/X-Frame/XSS-Protection/Referrer 响应头 |
+| `_encrypt_key` | 73 | AES 流加密：随机IV+HMAC-SHA256 流+认证标签 |
+| `_decrypt_key` | 89 | 先验认证标签（compare_digest）再解密，失败抛 ValueError |
+| `_check_rate` | 127 | 滑动窗口：过期剔除→≥max_req拒绝→append→>5000键清理 |
+| `startup_check` | 143 | 依赖检查 httpx/pytest + pytest --version |
+| `_cleanup_procs` | 161 | 关停时 terminate+wait(5s) 所有进程 |
+| `is_safe_url` | 179 | SSRF：file/ftp/gopher拒绝；localhost/.local/.internal拒绝；进程内DNS解析；私有/回环/链路本地/保留/多播拒绝；169.254.169.254拒绝；127.0.0.1:8000白名单 |
+| `safe` | 209 | 标识符净化：保留\w+CJK，防..穿越 |
+| `safe_path` | 217 | 路径净化：允许/{}?=&，补前导/ |
 
-**关键依赖**:
-- M2 依赖 M3 的 `_ctx`（上下文注入 prompt）
-- M4 依赖 M3 的 entities/rules/state_machine
-- M5 依赖 M2 的 cases（exact 模式）+ M4 的 layered cases
-- M6 依赖 M5 的测试代码
-- M7 依赖 M6 的 results.xml + tally 计数器
+### 2.2 测试生成
 
----
+| 函数 | 行 | 职责 |
+|------|----|------|
+| `_exact_test` | 231 | 标题关键词→(test名,语句,断言) 三元组，15 个关键词规则 |
+| `_layered_tests` | 314 | L1-L7 矩阵用例生成 |
+| `gen_code` | 420 | plan→5个测试文件+conftest |
+| `_validate_cases` | 1639 | AI 用例筛查（6项规则） |
+| `_call_llm` | 1969 | 非流式 LLM 调用+三层JSON解析容错 |
+| `_pattern_suggest` | 2054 | 模板兜底用例（已被AI-only策略闲置） |
+| `_analyze_with_ai` | 1847 | PRD→结构化上下文（AI） |
+| `_analyze_with_heuristic` | 1891 | PRD→结构化上下文（正则启发式） |
 
-## 四、关键规则冲突与优先级
+### 2.3 执行引擎
 
-| 冲突场景 | 规则 | 裁决 |
-|---------|------|------|
-| AI 用例 vs 模板用例 | A2 用户要 AI-only | AI 失败直接 error，不回退 |
-| 暂停 vs 超时 | E2 vs E4 | 暂停不杀进程；超时（运行态10min）杀 |
-| 方法限制 vs 模板 | W2(仅GET/POST) vs 模板含PUT/DELETE | 模板是演示数据不强制；生成时筛查剔除 |
-| 推理模型流式 vs 用户体验 | A3 | 非流式等完整回答（300s），不做假流式 |
-| 路径不匹配 | A5 | 打标记保留，不剔除（AI 可能更了解业务） |
+| 函数 | 行 | 职责 |
+|------|----|------|
+| `_run_stream` | 1124 | 新进程+SSE流，断开不杀进程（暂停语义） |
+| `_attach_existing` | 1068 | 重连持久队列续读 |
+| `save_plan` | 987 | plan存储 |
+
+### 2.4 存储与报告
+
+| 函数 | 行 | 职责 |
+|------|----|------|
+| `load_hist`/`save_hist_entry` | 817/837 | 历史读写（50条上限） |
+| `_atomic_write` | 830 | 临时文件+os.replace |
+| `load_tc`/`save_tc` | 1452/1465 | 用例库读写 |
+| `save_auto_tcs` | 2276 | 执行后自动存用例库（title去重，1000→截500） |
+| `update_tc_status` | 2332 | 按XML结果更新用例状态 |
+| `_build_report` | 1276 | HTML报告 |
+| `report_count` | 1205 | 摘要统计 |
 
 ---
 
-## 五、已知待办
+## 三、`_exact_test` 关键词规则全表（15 条）
 
-1. **UI 行计数**：`pgs.length*7` 应为 `*6`（每页 6 个 UI 测试）
-2. **API 分区头**：无条数显示
-3. **fallback 渲染路径**：缺 API/Data 分区头
-4. **非流式响应**：`reasoning_content` 未读取（推理模型若把答案放该字段会失败）
-5. **JSON 解析**：花括号深度计数在字符串内花括号场景会失效（建议 json.JSONDecoder().raw_decode）
-6. **mock_server.py**：与 mock_ecommerce 重复，未删除
-7. **_gen_hashes.py / tc_manager.html**：死文件待清理
+| 顺序 | 关键词（title.lower() 子串匹配） | 生成 | 断言 |
+|-----|-------------------------------|------|------|
+| 1 | sql/sqli/注入/injection | GET?q='OR'1'='1 | `<500` |
+| 2 | xss/脚本/script/cross | ?q=<script>alert(1) | `>=400 或 "<script>" not in text` |
+| 3 | 缺少/必填/缺失/空/empty | POST 空体 | `400/422/401` |
+| 4 | 未认证/未授权/无权限/unauth/token/forbidden | 空 Authorization 头 | `401/403` |
+| 5 | 不存在/404/not found/找不到 | 裸请求 | `404/400` |
+| 6 | 无效/非法/invalid/格式/bad | 非法邮箱 payload | `400/422` |
+| 7 | 重复/dup/冲突/already | 重复字段 payload | `400/409` |
+| 8 | 过短/short/超长/long/过长/溢出 | 1000字符 name | `400/422 或 <500` |
+| 9 | 创建/create/新增/add/注册 | 实体字段 payload | `200/201` |
+| 10 | 更新/update/修改/edit/replace | 更新 payload | `200/201/204` |
+| 11 | 删除/delete/remove | 裸请求 | `200/204` |
+| 12 | 详情/detail/单个/id/查看/获取 | 裸请求 | `200/404` |
+| 13 | 分页/page/limit/列表/list/查询/query | GET?page=1&limit=10 | `200` |
+| 14 | 登录/login/auth | admin/Admin@123 | `200/201` |
+| 15 | 健康/health/状态/status/ping | 裸请求 | `200` |
+| 兜底 | 无匹配 | POST 带 {"test":"value"} / 裸请求 | `<500` |
+
+**规则**：
+- 安全类(1-2)与错误类(3-8)优先于正常类(9-15)
+- 实体字段 f0-f3 从上下文提取，兜底 username/email/role/password
+- GET/HEAD/OPTIONS 不带 json body；DELETE 也不带（更新除外）
+- 方法仅 GET/POST（VALID_METHODS 限制）
+
+---
+
+## 四、7 层矩阵精确规则（_layered_tests）
+
+| 层 | 触发条件 | 精确生成逻辑 | 断言 |
+|----|---------|-------------|------|
+| L1 | 有 ctx 即生成 | 每 API 一条 `可达性-{path_id}` | `<500` |
+| L2 | 实体 fields 非空 且 GET | `契约校验-{ename}({n}字段)` | walrus: `isinstance((d:=...), list) and len(d)>0 and all(k in d[0] for k in [fields])` |
+| L3 | 规则关键词匹配 | 见下表 6 类 | 见下表 |
+| L4 | state_machine 非空 | 序列测试（create_ep→list_ep） | `<500`（弱，待增强） |
+| L5 | ≥2 API | 订单金额=Σ(quantity×unit_price) | 差值<0.02 |
+| L6 | 每 API | 剥认证头裸客户端 | **必须 401/403** |
+| L7 | 每 API | ThreadPoolExecutor(10) | 全部 `<500` |
+
+### L3 规则关键词 → payload/断言
+
+| 关键词 | payload | 断言 |
+|--------|---------|------|
+| 金额/amount/price/价格/库存/stock/>=0/非负/不能为负/必须>0 | {"amount":-1,"stock":-5} | 400/422 |
+| 唯一/unique/重复/已存在 | {f0:"dup-test-001"} | 200/201/400/409 |
+| 管理员/admin/权限/普通用户/无权/只能看/越权 | 无 | 200/401/403 |
+| 不可取消/only created/不能取消/不允许/之后不可 | DELETE /999999 | 400/404 |
+| 必填/required/不能为空/not null/缺少 | {"name":""} | 400/422 |
+| 超过/不能超过/exceed/上限/最多 | {"amount":99999999} | 400/422 |
+| 必须/must/shall/应/自动/auto | 无 | <500 |
+
+---
+
+## 五、执行引擎状态机（精确）
+
+```
+状态: [新建] [运行中] [已暂停] [完成] [已停止]
+
+[新建] —POST /api/plan(30/min,≤50KB)→ PLANS[pid]=plan
+[新建] —GET /api/stream→ gen_code → _run_stream:
+        Popen(pytest -v --tb=line --color=no --junitxml=results.xml)
+        RUN_PROCS[pid]=proc; RUN_QUEUES[pid]=Queue(); RUN_TALLIES[pid]=[0,0,0,0]
+        读线程: proc.stdout.readline → q.put(line) → 终止后 q.put("__END__")
+[运行中] —客户端断开(request.is_disconnected())→ break（不杀进程）
+[已暂停] —GET /api/stream→ RUN_PROCS[pid] 存活 → _attach_existing:
+        复用 RUN_QUEUES[pid] 续读（断线期间输出不丢）
+        复用 RUN_TALLIES[pid] 计数不重复
+[运行中/已暂停] —POST /api/stop→ proc.terminate()+kill → 清4个dict
+[运行中/已暂停] —q.get("__END__")→ save_hist_entry+save_auto_tcs+update_tc_status
+        → 清4个dict → SSE done(total,passed,failed,errors,rate)
+[运行中] —10分钟无输出→ kill+error
+```
+
+**关键差异**：
+- 流式(stream): `--tb=line`，实时 SSE，支持暂停
+- 同步(gnr): `--tb=short`，capture_output，300s 硬超时，返回 JSON
+
+**计数器规则**：`"PASSED" in st and "::" in st` 判通过（含进度行格式）；`[N%]` 正则提取百分比
+
+---
+
+## 六、AI 生成流程（精确失败模式）
+
+```
+POST /api/ai-suggest-stream
+├─ is_safe_url(base_url) 失败 → error "AI Base URL 被拒绝"
+├─ Key 校验失败(空/短/前缀) → error "未配置AI Key"
+├─ LLM 非流式调用 (timeout=300, max_tokens=max(配置,16000))
+│   ├─ HTTP≠200 → error "AI API {code}"
+│   ├─ content 解析出 0 个 JSON → error "AI 未产出有效用例(返回N字符: 片段)"
+│   ├─ _validate_cases 全剔除 → error "AI 用例全部未通过筛查"
+│   └─ 通过 → clear → case×N → done (含"筛查剔除N条"信息)
+└─ 任何异常 → error "AI异常({type})"
+```
+
+**筛查规则（_validate_cases）**：
+1. 方法 ∈ {GET,POST}
+2. 路径 / 或 http 开头
+3. 优先级归一化 P0/P1/P2
+4. title 必填≤200
+5. 方法+路径+标题去重
+6. 路径不匹配配置 → `_path_mismatch` 标记（不剔除）
+
+---
+
+## 七、数据模式
+
+### 7.1 plan（提交计划）
+```json
+{
+  "name": str, "url": str, "apis": [{"m":"GET|POST","p":"/api/x","n":"说明"}],
+  "pages": [{"u":"/","na":"名称"}], "rules": [str],
+  "types": ["api","ui","data","unit"], "exact": bool,
+  "auth": "none|bearer|basic|header", "authValue": str(仅内存),
+  "context": {"entities":[], "business_rules":[], "state_machine":[]},
+  "_dir": str(内部: 生成目录)
+}
+```
+
+### 7.2 用例（test_cases.json）
+```json
+{"id":"001","module":"电商系统","title":"...","priority":"P1",
+ "method":"GET","path":"/api/x","expected":"...","steps":"...",
+ "status":"待执行|通过|失败","created":"YYYY-MM-DD HH:MM"}
+```
+
+### 7.3 历史条目（exec_history.json）
+```json
+{"name":str,"url":str,"total":int,"passed":int,"failed":int,"errors":int,
+ "rate":float,"time":"YYYY-MM-DD HH:MM:SS","dir":str}
+```
+
+---
+
+## 八、前端函数全景（52 个）
+
+### 8.1 向导模块
+`toggleAuth`(348) `tab`(352) `initTpls`(362) `apply`(367) `addApi`(383) `quickTest`(392) `addPg`(406) `save`(416) `restore`(422) `fixUrl`(438) `validateURL`(446)
+
+### 8.2 执行模块
+`_runWithConfirm`(458) `generate`(468) `_streamSSE`(526) `_setRunButtons`(573) `pauseExec`(581) `resumeExec`(589) `stopExec`(601) `loadHist`(612) `delExec`(639) `execHist`(641) `_runGenerate`(907)
+
+### 8.3 预览模块
+`previewCases`(718) `toggleAllLocks`(837) `togglePreviewAll`(851) `toggleLock`(855) `execPreviewed`(870) `savePreviewed`(928) `saveToTC`(944) `loadTCs`(956) `renderTCList`(965) `importSelectedTCs`(979)
+
+### 8.4 上下文模块
+`initPRDList`(1008) `loadPRDFile`(1019) `uploadPRD`(1031) `loadAllPRDs`(1048) `renderContext`(1066) `editContext`(1118) `updateContext`(1125) `analyzeContext`(1131)
+
+### 8.5 AI 配置模块
+`loadAIProfiles`(1173) `saveAIProfiles`(1194) `renderAIList`(1195) `newAIConfig`(1216) `selectAIProfile`(1221) `deleteAIConfig`(1242) `toggleAIKeyVisibility`(1250) `onAIProviderChange`(1255) `saveAIConfig`(1260)
+
+### 8.6 工具
+`he`(285) HTML转义
+
+---
+
+## 九、数据流依赖图
+
+```
+fixUrl ──→ plan.url ──→ gen_code ──→ conftest.B
+_ctx ──┬──→ _call_llm prompt（业务规则注入）
+       ├──→ _layered_tests（L2实体字段/L3规则/L4状态机）
+       └──→ _exact_test（实体字段名 f0-f3）
+AI cases ──→ _validate_cases ──→ exact模式 plan.apis
+layered cases ──→ gen_code 追加（L1-L7）
+gen_code ──→ test_api/ui/data/unit.py + conftest(auth_token fixture)
+pytest ──→ results.xml ──┬──→ report_count/report
+                         ├──→ update_tc_status
+                         └──→ save_hist_entry
+authValue ──→ auth_env(TW_AUTH_HEADER) ──→ conftest 环境变量（不落盘）
+```
+
+---
+
+## 十、已知缺陷清单（精确行号）
+
+| # | 严重 | 位置 | 问题 |
+|---|------|------|------|
+| 1 | HIGH | main.py:968 | gnr 的 `p = t - f - e` **未减 skipped**（report_count 已修，gnr 漏修） |
+| 2 | HIGH | main.py:1697-1708 | JSON 花括号深度计数在字符串值含 `{}` 时失效 |
+| 3 | MED | main.py:1689 | 非流式响应只读 message.content，未读 reasoning_content |
+| 4 | MED | main.py:2256 | PUT /api/tc/{cid} 无类型校验 |
+| 5 | LOW | index.html:782 | UI 计数 `pgs.length*7` 应为 `*6` |
+| 6 | LOW | index.html:769 | API 分区头无条数 |
+| 7 | LOW | index.html:823-830 | fallback 渲染缺 API/Data 分区头 |
+| 8 | LOW | main.py:154 | startup_check subprocess 无 timeout |
+| 9 | LOW | 死文件 | mock_server.py / _gen_hashes.py / tc_manager.html |
+| 10 | LOW | main.py:301 | 登录用例硬编码 admin/Admin@123（对非电商系统会误判） |
+| 11 | INFO | main.py:1722 | 暂停态无超时：进程跑完自然结束，但若挂起无人重连则残留（stop 可清） |
