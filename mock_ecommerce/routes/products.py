@@ -38,8 +38,16 @@ def update_product(pid: str, body: ProductUpdate, user = Depends(require_admin))
     p["updated"] = now()
     return p
 
+@router.post("/{pid}/update")
+def update_product_post(pid: str, body: ProductUpdate, user = Depends(require_admin)):
+    return update_product(pid, body, user)
+
 @router.delete("/{pid}", status_code=204)
 def delete_product(pid: str, user = Depends(require_admin)):
     before = len(_store["products"])
     _store["products"] = [x for x in _store["products"] if x["id"] != pid]
     if len(_store["products"]) == before: raise HTTPException(404, "商品不存在")
+
+@router.post("/{pid}/delete", status_code=204)
+def delete_product_post(pid: str, user = Depends(require_admin)):
+    return delete_product(pid, user)

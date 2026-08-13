@@ -68,6 +68,10 @@ def transition_order(oid: str, body: StatusTransition, user = Depends(require_op
     o["updated"] = now()
     return o
 
+@router.post("/{oid}/status")
+def transition_order_post(oid: str, body: StatusTransition, user = Depends(require_operator)):
+    return transition_order(oid, body, user)
+
 @router.delete("/{oid}", status_code=204)
 def cancel_order(oid: str, user = Depends(require_operator)):
     o = next((x for x in _store["orders"] if x["id"] == oid), None)
@@ -83,3 +87,7 @@ def cancel_order(oid: str, user = Depends(require_operator)):
             p["updated"] = now()
     o["status"] = "cancelled"
     o["updated"] = now()
+
+@router.post("/{oid}/cancel", status_code=204)
+def cancel_order_post(oid: str, user = Depends(require_operator)):
+    return cancel_order(oid, user)

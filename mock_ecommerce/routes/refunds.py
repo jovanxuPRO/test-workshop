@@ -44,6 +44,10 @@ def approve_refund(rid: str, user = Depends(require_admin)):
             if p: p["stock"] += it["quantity"]
     return r
 
+@router.post("/{rid}/approve")
+def approve_refund_post(rid: str, user = Depends(require_admin)):
+    return approve_refund(rid, user)
+
 @router.put("/{rid}/reject")
 def reject_refund(rid: str, user = Depends(require_admin)):
     r = next((x for x in _store["refunds"] if x["id"] == rid), None)
@@ -51,3 +55,7 @@ def reject_refund(rid: str, user = Depends(require_admin)):
     if r["status"] != "pending": raise HTTPException(400, f"退款已{r['status']}")
     r["status"] = "rejected"
     return r
+
+@router.post("/{rid}/reject")
+def reject_refund_post(rid: str, user = Depends(require_admin)):
+    return reject_refund(rid, user)
