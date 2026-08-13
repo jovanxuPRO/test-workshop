@@ -1,5 +1,115 @@
 [
   {
+    "name": "E-Commerce 电商系统",
+    "url": "http://127.0.0.1:8000",
+    "total": 172,
+    "passed": 92,
+    "failed": 80,
+    "errors": 0,
+    "rate": 53.5,
+    "time": "2026-08-13 20:33:44",
+    "dir": "E_Commerce_电商系统_203328_28f45e"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 236,
+    "passed": 204,
+    "failed": 32,
+    "errors": 0,
+    "rate": 86.4,
+    "time": "2026-08-13 01:07:15",
+    "dir": "Baidu_百度全量_010549_127db1"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 172,
+    "passed": 138,
+    "failed": 34,
+    "errors": 0,
+    "rate": 80.2,
+    "time": "2026-08-13 01:04:03",
+    "dir": "Baidu_百度全量_010248_b0358b"
+  },
+  {
+    "name": "Baidu 百度全量",
+    "url": "https://www.baidu.com",
+    "total": 179,
+    "passed": 139,
+    "failed": 40,
+    "errors": 0,
+    "rate": 77.7,
+    "time": "2026-08-13 00:59:27",
+    "dir": "Baidu_百度全量_005812_41997f"
+  },
+  {
+    "name": "E-Commerce 电商系统",
+    "url": "http://127.0.0.1:8000",
+    "total": 172,
+    "passed": 114,
+    "failed": 58,
+    "errors": 0,
+    "rate": 66.3,
+    "time": "2026-08-13 00:54:24",
+    "dir": "E_Commerce_电商系统_005408_eae780"
+  },
+  {
+    "name": "E-Commerce 电商系统",
+    "url": "http://127.0.0.1:8000",
+    "total": 289,
+    "passed": 5,
+    "failed": 284,
+    "errors": 0,
+    "rate": 1.7,
+    "time": "2026-08-13 00:42:29",
+    "dir": "E_Commerce_电商系统_003441_e147ec"
+  },
+  {
+    "name": "Quick: 用户登录",
+    "url": "http://127.0.0.1:8000",
+    "total": 50,
+    "passed": 4,
+    "failed": 46,
+    "errors": 0,
+    "rate": 8.0,
+    "time": "2026-08-13 00:22:07",
+    "dir": "Quick_用户登录_002017_7d5f0f"
+  },
+  {
+    "name": "E-Commerce 电商系统",
+    "url": "http://127.0.0.1:8000",
+    "total": 137,
+    "passed": 5,
+    "failed": 132,
+    "errors": 0,
+    "rate": 3.6,
+    "time": "2026-08-13 00:19:39",
+    "dir": "E_Commerce_电商系统_001540_41c39f"
+  },
+  {
+    "name": "E-Commerce 电商系统",
+    "url": "http://127.0.0.1:8000",
+    "total": 131,
+    "passed": 5,
+    "failed": 126,
+    "errors": 0,
+    "rate": 3.8,
+    "time": "2026-08-12 22:49:12",
+    "dir": "E_Commerce_电商系统_224520_ca3925"
+  },
+  {
+    "name": "E-Commerce 电商系统",
+    "url": "http://127.0.0.1:8000",
+    "total": 185,
+    "passed": 5,
+    "failed": 180,
+    "errors": 0,
+    "rate": 2.7,
+    "time": "2026-08-12 20:38:32",
+    "dir": "E_Commerce_电商系统_203327_6761f9"
+  },
+  {
     "name": "Baidu 百度全量",
     "url": "https://www.baidu.com",
     "total": 104,
@@ -438,115 +548,5 @@
     "rate": 94.7,
     "time": "2026-07-23 04:22:17",
     "dir": "Baidu_百度全量_042210_4f5a91"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 51,
-    "passed": 51,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 04:02:37",
-    "dir": "Baidu_百度全量_040223_ed14f2"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 53,
-    "passed": 53,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 03:57:36",
-    "dir": "Baidu_百度全量_035730_4f11f7"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 108,
-    "passed": 108,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 03:49:37",
-    "dir": "Baidu_百度全量_034922_1abf2b"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 108,
-    "passed": 108,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 03:40:19",
-    "dir": "Baidu_百度全量_034003_d37afb"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 108,
-    "passed": 108,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 03:19:16",
-    "dir": "Baidu_百度全量_031853_2632f7"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 142,
-    "passed": 142,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 01:36:24",
-    "dir": "Baidu_百度全量_013438_64ba67"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 142,
-    "passed": 142,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 01:29:08",
-    "dir": "Baidu_百度全量_012741_84415d"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 142,
-    "passed": 142,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 01:25:47",
-    "dir": "Baidu_百度全量_012414_1cff5e"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 142,
-    "passed": 142,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 01:23:32",
-    "dir": "Baidu_百度全量_012154_240c9e"
-  },
-  {
-    "name": "Baidu 百度全量",
-    "url": "https://www.baidu.com",
-    "total": 142,
-    "passed": 142,
-    "failed": 0,
-    "errors": 0,
-    "rate": 100.0,
-    "time": "2026-07-23 01:18:53",
-    "dir": "Baidu_百度全量_011705_97524f"
   }
 ]

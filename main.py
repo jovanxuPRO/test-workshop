@@ -151,11 +151,14 @@ async def startup_check():
         except ImportError:
             checks[mod] = False
             logger.warning(f"Missing dependency: {mod}")
-    r = subprocess.run(["python", "-m", "pytest", "--version"], capture_output=True, text=True)
-    if r.returncode != 0:
-        logger.warning("pytest not found on PATH")
-    else:
-        logger.info(f"Startup OK. {r.stdout.strip()}")
+    try:
+        r = subprocess.run(["python", "-m", "pytest", "--version"], capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            logger.warning("pytest not found on PATH")
+        else:
+            logger.info(f"Startup OK. {r.stdout.strip()}")
+    except subprocess.TimeoutExpired:
+        logger.warning("pytest --version timed out")
 
 
 def _cleanup_procs():
@@ -301,7 +304,7 @@ def _exact_test(method, path, title, entities=None):
         if method in ("GET","HEAD","OPTIONS"):
             stmt = f'c.request("{method}","{path}")'
         else:
-            stmt = f'c.{method.lower()}("{path}", json={{"username":"admin","password":"Admin@123"}})'
+            stmt = f'c.{method.lower()}("{path}", json={{"username": os.environ.get("TW_LOGIN_USER","admin"), "password": os.environ.get("TW_LOGIN_PASS","Admin@123")}})'
         return ("login_ok", stmt, "r.status_code in (200, 201)")
     if any(kw in t for kw in ["健康","health","状态","status","ping"]):
         stmt = f'c.request("{method}","{path}")'
@@ -587,7 +590,7 @@ def gen_code(plan):
 
     # api tests
     if "api" in types and apis:
-        lines = ["import pytest, time", "from conftest import B", ""]
+        lines = ["import pytest, time, os", "from conftest import B", ""]
         seen = set()
         exact = plan.get("exact", False)  # exact mode: 1 test per API (for preview execution)
         for ai, a in enumerate(apis):
@@ -957,7 +960,7 @@ async def gnr(request: Request):
             r = await asyncio.to_thread(
                 subprocess.run, ["python", "-m", "pytest", d, "-v", "--tb=short", "--color=no", f"--junitxml={xml_path}"],
                 capture_output=True, text=True, timeout=300, env=env)
-            t = p = f = 0
+            t = p = f = e = 0
             if os.path.exists(xml_path):
                 root = ET.parse(xml_path).getroot()
                 ts = root.find("testsuite")
@@ -965,7 +968,8 @@ async def gnr(request: Request):
                 t = int(ts.get("tests", 0) or 0)
                 f = int(ts.get("failures", 0) or 0)
                 e = int(ts.get("errors", 0) or 0)
-                p = t - f - e
+                s = int(ts.get("skipped", 0) or 0)
+                p = t - f - e - s
             save_hist_entry({
                 "name": body.get("name", "?"),
                 "url": body.get("url", "?").split("?")[0],
@@ -1736,30 +1740,25 @@ async def ai_suggest_stream(request: Request):
                     yield f"data: {json.dumps({'t':'error','msg':f'AI API {r.status_code}'})}\n\n"
                     yield f"data: {json.dumps({'t':'done','source':'error'})}\n\n"
                     return
-                content = r.json().get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+                msg = r.json().get("choices", [{}])[0].get("message", {}) or {}
+                content = msg.get("content", "") or msg.get("reasoning_content", "") or ""
                 logger.info(f"AI response received: {len(content)} chars, first 100: {content[:100]!r}")
                 buf = content
-                # Parse all complete JSON objects
-                import re
+                # Parse all JSON objects with raw_decode (handles braces inside string values)
+                import json as _json
                 cases = []
-                obj_start = 0
+                decoder = _json.JSONDecoder()
+                idx = 0
                 while True:
-                    obj_start = buf.find("{", obj_start)
-                    if obj_start < 0: break
-                    depth = 0; end = -1
-                    for i in range(obj_start, len(buf)):
-                        if buf[i] == '{': depth += 1
-                        elif buf[i] == '}':
-                            depth -= 1
-                            if depth == 0: end = i; break
-                    if end < 0: break
+                    idx = buf.find("{", idx)
+                    if idx < 0: break
                     try:
-                        obj = json.loads(buf[obj_start:end+1])
+                        obj, end = decoder.raw_decode(buf, idx)
                         if isinstance(obj, dict) and "title" in obj:
                             cases.append(obj)
-                    except json.JSONDecodeError:
-                        pass
-                    obj_start = end + 1
+                        idx = end
+                    except _json.JSONDecodeError:
+                        idx += 1
                 if not cases:
                     raw_snippet = buf[:300].replace("\\", "\\\\").replace("\n", "\\n")
                     logger.warning(f"AI returned no parseable cases, content={raw_snippet!r}")
@@ -2019,7 +2018,8 @@ async def _call_llm(apis, seed, model, base_url, context=None, max_tokens=4096):
         logger.info(f"AI response: status={r.status_code} len={len(r.text)}")
         if r.status_code != 200:
             raise Exception(f"AI API {r.status_code}: {r.text[:200]}")
-        text = r.json()["choices"][0]["message"]["content"].strip()
+        msg = r.json().get("choices", [{}])[0].get("message", {}) or {}
+        text = (msg.get("content", "") or msg.get("reasoning_content", "") or "").strip()
         logger.info(f"AI raw ({len(text)} chars): {repr(text[:200])}")
         if not text:
             logger.warning("AI returned empty content")
@@ -2037,16 +2037,19 @@ async def _call_llm(apis, seed, model, base_url, context=None, max_tokens=4096):
         if s >= 0 and e > s:
             try: return json.loads(text[s:e+1])
             except json.JSONDecodeError: pass
-        # 3. Brace depth extraction
-        depth, buf = 0, ""
-        for ch in text:
-            buf += ch
-            if ch == '{': depth += 1
-            elif ch == '}':
-                depth -= 1
-                if depth == 0:
-                    try: items.append(json.loads(buf)); buf = ""
-                    except json.JSONDecodeError: buf = ""
+        # 3. raw_decode extraction (handles braces inside string values)
+        decoder = json.JSONDecoder()
+        idx = 0
+        while True:
+            idx = text.find("{", idx)
+            if idx < 0: break
+            try:
+                obj, end = decoder.raw_decode(text, idx)
+                if isinstance(obj, dict) and "title" in obj:
+                    items.append(obj)
+                idx = end
+            except json.JSONDecodeError:
+                idx += 1
         if items: return items
         raise Exception(f"No parseable objects in {len(text)} chars")
 
@@ -2261,7 +2264,12 @@ async def upd_tc(cid: str, request: Request):
         if tc["id"] == cid:
             for k in ["module", "title", "priority", "method", "path", "expected", "steps", "status"]:
                 if k in b:
-                    tc[k] = b[k]
+                    v = b[k]
+                    if k == "priority" and str(v).upper() not in ("P0", "P1", "P2", "P3", "P4"):
+                        v = "P1"
+                    if k == "method" and str(v).upper() not in ("GET", "POST"):
+                        v = "GET"
+                    tc[k] = str(v)[:500] if isinstance(v, str) else str(v)
             save_tc(tcs)
             return {"ok": True}
     return {"ok": False}

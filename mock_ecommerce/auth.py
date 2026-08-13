@@ -1,10 +1,10 @@
 """JWT Authentication module."""
-import jwt
+import os, jwt
 from datetime import datetime, timedelta
 from fastapi import Header, Depends, HTTPException
 from models import _store
 
-JWT_SECRET = "ecommerce-secret-key-2026-prod"
+JWT_SECRET = os.environ.get("JWT_SECRET", "ecommerce-secret-key-2026-prod")
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 8
 
