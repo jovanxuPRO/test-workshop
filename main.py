@@ -1001,6 +1001,8 @@ async def save_plan(request: Request):
 
 
 RUN_PROCS = {}  # pid -> Popen, per-session process tracking
+RUN_QUEUES = {}  # pid -> Queue, persistent output queue for reconnect
+RUN_TALLIES = {}  # pid -> [T, P, F, E], counters persist across reconnects
 
 @app.post("/api/stop")
 def stop_exec(sid: str = ""):
@@ -1013,6 +1015,8 @@ def stop_exec(sid: str = ""):
         except Exception:
             pass
         RUN_PROCS.pop(sid, None)
+        RUN_QUEUES.pop(sid, None)
+        RUN_TALLIES.pop(sid, None)
         PLANS.pop(sid, None)
     elif not sid:
         for pid, proc in list(RUN_PROCS.items()):
@@ -1022,6 +1026,8 @@ def stop_exec(sid: str = ""):
             except Exception:
                 pass
         RUN_PROCS.clear()
+        RUN_QUEUES.clear()
+        RUN_TALLIES.clear()
         PLANS.clear()
     return {"ok": True}
 
@@ -1058,16 +1064,12 @@ async def stream(request: Request):
 
 
 def _attach_existing(pid, proc, plan):
-    """Reconnect SSE to an already-running subprocess."""
-    q = queue.Queue()
-    T = [0]; P = [0]; F = [0]; E = [0]
-
-    def w():
-        for line in iter(proc.stdout.readline, ""): q.put(line)
-        q.put("__END__")
-        proc.wait()
-
-    threading.Thread(target=w, daemon=True).start()
+    """Reconnect SSE to an already-running subprocess using its persistent queue."""
+    q = RUN_QUEUES.get(pid)
+    if q is None:
+        q = queue.Queue()
+        RUN_QUEUES[pid] = q
+    tally = RUN_TALLIES.setdefault(pid, [0, 0, 0, 0])  # T, P, F, E
 
     async def s():
         try:
@@ -1087,32 +1089,35 @@ def _attach_existing(pid, proc, plan):
                     await asyncio.sleep(0.05)
                     continue
                 if line == "__END__":
-                    rate = round(P[0]/T[0]*100,1) if T[0] else 0
+                    T, P, F, E = tally
+                    rate = round(P/T*100, 1) if T else 0
                     RUN_PROCS.pop(pid, None)
+                    RUN_QUEUES.pop(pid, None)
+                    RUN_TALLIES.pop(pid, None)
                     PLANS.pop(pid, None)
-                    yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','total':T,'passed':P,'failed':F,'errors':E,'rate':rate})}\n\n"
                     break
                 st = line.strip()
                 if "PASSED" in st and "::" in st:
-                    T[0] += 1; P[0] += 1
+                    tally[0] += 1; tally[1] += 1
                 elif "FAILED" in st and "::" in st:
-                    T[0] += 1; F[0] += 1
+                    tally[0] += 1; tally[2] += 1
                 elif "ERROR" in st and "::" in st:
-                    T[0] += 1; E[0] += 1
+                    tally[0] += 1; tally[3] += 1
                 yield f"data: {json.dumps({'t':'test','line':st[-300:].replace(chr(10),' ').replace(chr(13),'')})}\n\n"
         finally:
-            RUN_PROCS.pop(pid, None)
-            PLANS.pop(pid, None)
+            pass  # Keep process + queue alive for another reconnect
     return StreamingResponse(s(), media_type="text/event-stream",
         headers={"Cache-Control":"no-cache","Connection":"keep-alive","X-Accel-Buffering":"no"})
 
 
 def _run_stream(pid, plan, d, xml_path, env, request):
-    """Start a new subprocess and stream its output via SSE."""
+    """Start a new subprocess and stream its output via SSE.
+    Persistent queue enables pause/resume: disconnect detaches, reconnect attaches."""
 
     async def s():
-        q = queue.Queue()
-        T = [0]; P = [0]; F = [0]; E = [0]
+        q = RUN_QUEUES.setdefault(pid, queue.Queue())
+        tally = RUN_TALLIES.setdefault(pid, [0, 0, 0, 0])  # T, P, F, E
         try:
             try:
                 proc = subprocess.Popen(
@@ -1135,13 +1140,13 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                 if datetime.now().timestamp() > _deadline:
                     try: proc.terminate(); proc.kill()
                     except Exception: pass
+                    RUN_PROCS.pop(pid, None)
+                    RUN_QUEUES.pop(pid, None)
+                    RUN_TALLIES.pop(pid, None)
                     yield f"data: {json.dumps({'t':'error','msg':'Execution timeout (10min)'})}\n\n"
                     break
                 if await request.is_disconnected():
-                    try: proc.terminate(); proc.kill()
-                    except Exception: pass
-                    RUN_PROCS.pop(pid, None)
-                    PLANS.pop(pid, None)
+                    # Pause: detach but keep process + queue + tally alive for resume
                     break
                 try:
                     line = await asyncio.to_thread(q.get, timeout=0.1)
@@ -1152,25 +1157,27 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                     await asyncio.sleep(0.05)
                     continue
                 if line == "__END__":
-                    rate = round(P[0] / T[0] * 100, 1) if T[0] else 0
+                    rate = round(tally[1] / tally[0] * 100, 1) if tally[0] else 0
                     e = {"name": plan.get("name","?"), "url": plan.get("url","?").split("?")[0],
-                        "total": T[0], "passed": P[0], "failed": F[0], "errors": E[0],
+                        "total": tally[0], "passed": tally[1], "failed": tally[2], "errors": tally[3],
                         "rate": rate, "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "dir": os.path.basename(d)}
                     save_hist_entry(e)
                     save_auto_tcs(plan)
                     update_tc_status(plan, xml_path)
-                    yield f"data: {json.dumps({'t':'done','total':T[0],'passed':P[0],'failed':F[0],'errors':E[0],'rate':rate})}\n\n"
+                    yield f"data: {json.dumps({'t':'done','total':tally[0],'passed':tally[1],'failed':tally[2],'errors':tally[3],'rate':rate})}\n\n"
                     RUN_PROCS.pop(pid, None)
+                    RUN_QUEUES.pop(pid, None)
+                    RUN_TALLIES.pop(pid, None)
                     PLANS.pop(pid, None)
                     break
                 st = line.strip()
                 if "PASSED" in st and "::" in st:
-                    T[0] += 1; P[0] += 1; icon = "[PASS]"
+                    tally[0] += 1; tally[1] += 1; icon = "[PASS]"
                 elif "FAILED" in st and "::" in st:
-                    T[0] += 1; F[0] += 1; icon = "[FAIL]"
+                    tally[0] += 1; tally[2] += 1; icon = "[FAIL]"
                 elif "ERROR" in st and "::" in st:
-                    T[0] += 1; E[0] += 1; icon = "[ERR ]"
+                    tally[0] += 1; tally[3] += 1; icon = "[ERR ]"
                 else:
                     icon = ""
                 pct_str = ""
@@ -1180,8 +1187,7 @@ def _run_stream(pid, plan, d, xml_path, env, request):
                 out_line = out_line.replace("\n"," ").replace("\r","")
                 yield f"data: {json.dumps({'t':'test','line':out_line,'pct':pct_str})}\n\n"
         finally:
-            # Keep PLANS alive on disconnect so reconnection works
-            pass
+            pass  # Pause: keep process + queue + tally alive for resume
     return StreamingResponse(s(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
