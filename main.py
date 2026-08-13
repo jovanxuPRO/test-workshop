@@ -251,7 +251,7 @@ def _exact_test(method, path, title, entities=None):
     # Security/error keywords first — they override main action when present
     if any(kw in t for kw in ["sql","sqli","注入","injection"]):
         stmt = f'c.request("{method}","{path}?q=%(27)or%(27)1%(27)=%(27)1".replace("%(27)","\'"))'
-        return ("sql_inject", stmt, "r.status_code >= 400 or r.status_code < 500")
+        return ("sql_inject", stmt, 'r.status_code < 500')
     if any(kw in t for kw in ["xss","脚本","script","cross"]):
         stmt = f'c.request("{method}","{path}?q=%3Cscript%3Ealert(1)%3C/script%3E")'
         if method in ("POST", "PUT", "PATCH"):
@@ -323,15 +323,21 @@ def _layered_tests(apis, ctx_entities, ctx_rules, ctx_state_machine):
     for ent in ctx_entities:
         if isinstance(ent, dict):
             entity_map[ent.get("name", "").lower()] = ent.get("fields", [])
+    # L1: Reachability — every endpoint must respond < 500
+    for api in apis:
+        p = api.get("p", ""); m = api.get("m", "GET")
+        path_id = p.replace("/", "_").strip("_")[:30]
+        extra.append({"m": m, "p": p, "n": f"可达性-{path_id}",
+                      "layer": "L1", "check": "r.status_code < 500"})
     # L2: Field contract — for each API that returns entities, add field checks
     for api in apis:
         p = api.get("p", ""); m = api.get("m", "GET")
         if m != "GET": continue
         for ename, fields in entity_map.items():
             if ename and ename in p.lower() and fields:
-                field_list = "], ".join([f"'{f}'" for f in fields[:5]])
+                flist = "], ".join([f"'{f}'" for f in fields[:5]])
                 extra.append({"m": "GET", "p": p, "n": f"契约校验-{ename}({len(fields[:5])}字段)",
-                              "layer": "L2", "check": f"len((d:=r.json().get('data', r.json())) if isinstance(d, list) else []) > 0"})
+                              "layer": "L2", "check": f"isinstance((d:=r.json().get('data', r.json())), list) and len(d) > 0 and all(k in d[0] for k in [{flist}])"})
                 break
     # L3: Business rules from context
     for rule in ctx_rules:
@@ -581,7 +587,7 @@ def gen_code(plan):
 
     # api tests
     if "api" in types and apis:
-        lines = ["import pytest, time", ""]
+        lines = ["import pytest, time", "from conftest import B", ""]
         seen = set()
         exact = plan.get("exact", False)  # exact mode: 1 test per API (for preview execution)
         for ai, a in enumerate(apis):
@@ -672,8 +678,23 @@ def gen_code(plan):
                 lines.append("")
                 lines.append(f"    def test_ok(self, c):")
                 lines.append(f'        """{lv}: {lt.get("n","")}"""')
-                lines.append(f"        r = {stmt}")
-                lines.append(f"        assert {chk}")
+                if lv == "L7":
+                    # Real concurrency: 10 parallel requests via ThreadPoolExecutor
+                    lines.append(f'        import concurrent.futures')
+                    lines.append(f'        def _req(_): return c.request("{m}","{p}").status_code')
+                    lines.append(f'        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:')
+                    lines.append(f'            codes = list(ex.map(_req, range(10)))')
+                    lines.append(f'        assert all(s < 500 for s in codes)')
+                elif lv == "L6":
+                    # Unauthorized test: strip auth header explicitly
+                    lines.append(f'        import httpx')
+                    lines.append(f'        _c = httpx.Client(base_url=B, timeout=25, follow_redirects=True)')
+                    lines.append(f'        r = _c.request("{m}","{p}")')
+                    lines.append(f'        assert r.status_code in (401, 403), f"未授权应被拒绝, 实际 {{r.status_code}}"')
+                    lines.append(f'        _c.close()')
+                else:
+                    lines.append(f"        r = {stmt}")
+                    lines.append(f"        assert {chk}")
                 lines.append("")
         with open(os.path.join(out, "test_api.py"), "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
